@@ -173,6 +173,35 @@ EXECUTE FUNCTION public.handle_new_user();
 
 
 -- ============================================================
+-- 6b. VALIDASI WAKTU KEJADIAN
+-- Waktu kejadian tidak boleh di masa depan (toleransi 5 menit).
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.reports_validate_incident_time()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+    IF NEW.incident_time IS NOT NULL
+       AND NEW.incident_time > NOW() + INTERVAL '5 minutes' THEN
+        RAISE EXCEPTION 'Waktu kejadian tidak boleh di masa depan.'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS reports_validate_incident_time ON public.reports;
+
+CREATE TRIGGER reports_validate_incident_time
+BEFORE INSERT ON public.reports
+FOR EACH ROW
+EXECUTE FUNCTION public.reports_validate_incident_time();
+
+
+-- ============================================================
 -- 7. CHECK ADMIN ROLE
 -- Memeriksa apakah pengguna yang login adalah admin.
 -- ============================================================
