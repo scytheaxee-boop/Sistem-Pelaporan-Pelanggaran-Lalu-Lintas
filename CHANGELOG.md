@@ -3,7 +3,7 @@
 **Project:** Sistem Pelaporan Dugaan Pelanggaran Lalu Lintas  
 **Log Format:** Prompt-Based Development History  
 **Timezone:** Asia/Makassar (WITA)  
-**Coverage:** 28 Oktober 2026 – 08 November 2026  
+**Coverage:** 28 Oktober 2026 – 17 November 2026  
 **Record Type:** Historical Reconstruction from Available Conversation History
 
 ---
@@ -22,6 +22,7 @@
 10. Change Tracking Agent
 11. Prompt-Based Logging Requirements
 12. Consolidated Documentation Requirements
+13. Bug Fix Alur Sistem (17 November 2026)
 
 ---
 
@@ -1185,6 +1186,164 @@ SRS SYNCHRONIZATION
 
 ---
 
+# 17 NOVEMBER 2026 — TUESDAY
+
+## DAILY DEVELOPMENT OVERVIEW
+
+Fokus pekerjaan:
+
+- Memperbaiki bug alur sistem dari hasil pengecekan (`HASIL_CEK_ALUR.md` bagian 2) dan audit (`AUDIT_REPORT.md` AUD-04, AUD-06).
+- Membuat branch kerja terpisah dari `main`.
+- Commit dan push branch perbaikan ke GitHub.
+- Pembaruan `CHANGELOG.md` untuk setiap perubahan.
+
+**Catatan waktu:** Jam pasti setiap prompt tidak tersedia dan tidak direka.
+
+---
+
+## CHANGE-20261117-001 — PERBAIKAN BUG ALUR SISTEM
+
+**Date:** 17 November 2026  
+**Day:** Tuesday  
+**Month:** November  
+**Year:** 2026  
+**Time:** Tidak tersedia  
+**Category:** BUG FIX / FRONTEND / DATABASE  
+**Status:** IMPLEMENTED — BUILD VERIFIED, BELUM DIUJI DI BROWSER
+
+### 1. Original Developer Prompt
+
+"perbaiki hanya bugnya ingat itu! dan buat branch baru untuk itu! jangan langsung mengubah di branch main"
+
+### 2. Objective
+
+Memperbaiki seluruh bug pada `HASIL_CEK_ALUR.md` bagian 2 serta AUD-04 dan AUD-06 dari `AUDIT_REPORT.md`, tanpa menambah fitur baru dan tanpa mengubah branch `main`.
+
+### 3. Branch
+
+`fix/bug-alur-sistem` (dibuat dari kondisi `fix/audit-bugs`, yang setara dengan `main` pada commit `cee98e1`).
+
+### 4. Fixed Issues
+
+| No | Bug | Perbaikan | Lokasi |
+|---|---|---|---|
+| 1 | Kolom `Pelapor` di Dashboard Admin selalu `"Pengguna"` | Policy RLS `profiles_select_own_or_admin` agar admin dapat membaca seluruh profil | `supabase/migrations/20261117_fix_bug_alur.sql` |
+| 2a | Lokasi 1 huruf lolos | Validasi minimal 3 karakter (frontend + constraint `reports_location_length`) | `src/App.jsx` (`CreateReportPage`), migrasi SQL |
+| 2b | Latitude `"abc"` lolos dan menjadi `null` | Fungsi `parseCoordinate()` menolak nilai non-angka | `src/App.jsx` |
+| 2c | Waktu kejadian di masa depan lolos | Atribut `max` pada input, validasi JS, trigger `reports_validate_incident_time` | `src/App.jsx`, migrasi SQL, `supabase/schema.sql` |
+| 2d | Deskripsi acak > 20 huruf lolos | Deskripsi minimal 3 kata (frontend) + constraint `reports_description_length` | `src/App.jsx`, migrasi SQL |
+| 3 | Pesan sukses admin hilang saat modal tertutup | Pesan ditampilkan di halaman admin setelah modal ditutup | `src/App.jsx` (`AdminPage`) |
+| 4 | Link `Lihat panduan` gagal dari halaman lain | Diganti `Link` ke `/#panduan` + efek scroll ke hash | `src/App.jsx` (`App`, `HomePage`) |
+| 5a | Hero beranda menumpuk di HP/tablet | `.hero-art` disembunyikan pada lebar ≤ 850px | `src/styles.css` |
+| 5b | Penghitung `0/3000` menimpa teks bantuan | `.char-count` tidak lagi `position:absolute` | `src/styles.css` |
+| 5c | Kolom status & tombol `Periksa` terpotong | `min-width:0` pada `.main-column`/`.page-content`, kolom aksi `sticky` | `src/styles.css` |
+| 6a | `Esc` tidak menutup modal/menu HP | Hook `useEscape()` dipakai di `App`, `ReportDetail`, `AdminPage` | `src/App.jsx` |
+| 6b | Console error `404 /favicon.ico` | Menambah favicon SVG | `index.html`, `public/favicon.svg` |
+| AUD-04 | Error query/foto tidak ditampilkan | Menampilkan pesan error di `MyReportsPage`, `ReportDetail`, `AdminPhoto` | `src/App.jsx` |
+| AUD-06 | Waktu kejadian masa depan | Sama dengan 2c | — |
+
+### 5. Source Code Changes
+
+- `src/App.jsx` — helper `useEscape`, `parseCoordinate`, `localDateTimeNow`; validasi form; pesan sukses admin; link panduan; penanganan error.
+- `src/styles.css` — aturan CSS perbaikan responsif ditambahkan di akhir file.
+- `index.html` — tag `<link rel="icon">`.
+- `public/favicon.svg` — file baru.
+
+### 6. Database Changes
+
+- **File baru:** `supabase/migrations/20261117_fix_bug_alur.sql` (idempotent), berisi:
+  - `public.is_admin()` (sama dengan schema).
+  - Policy `profiles_select_own_or_admin` pada `public.profiles`.
+  - Constraint `reports_location_length` dan `reports_description_length` pada `public.reports` (`NOT VALID`, agar data lama seperti lokasi `"a"` tidak menggagalkan migrasi).
+  - Fungsi + trigger `reports_validate_incident_time` (BEFORE INSERT, toleransi 5 menit).
+- **`supabase/schema.sql`** — ditambah bagian `6b. VALIDASI WAKTU KEJADIAN` agar blueprint sinkron.
+
+### 7. Not Included (fitur, bukan bug)
+
+Alur revisi laporan, timeline riwayat status, lupa kata sandi/edit profil, komponen ML, pagination, dan perbedaan angka `Menunggu verifikasi` antara Beranda dan Admin.
+
+### 8. Testing
+
+- `vite build` berhasil.
+- Belum diuji interaktif di browser.
+- Migrasi SQL **belum dijalankan** di database live; bug #1 dan validasi database bug #2 baru aktif setelah dijalankan di Supabase SQL Editor.
+
+---
+
+## CHANGE-20261117-002 — COMMIT PERBAIKAN BUG
+
+**Date:** 17 November 2026  
+**Time:** Tidak tersedia  
+**Category:** VERSION CONTROL  
+**Status:** COMMIT RECORDED
+
+### 1. Original Developer Prompt
+
+"ya, commit di branch itu"
+
+### 2. Commit Information
+
+- Branch: `fix/bug-alur-sistem`
+- Commit: `872aefc` — `fix: perbaiki bug alur sistem dari hasil pengecekan`
+- File: `src/App.jsx`, `src/styles.css`, `index.html`, `public/favicon.svg`, `supabase/schema.sql`, `supabase/migrations/20261117_fix_bug_alur.sql`
+
+### 3. Notes
+
+Perubahan yang sudah ada sebelumnya (`.gitignore`, `package.json`, folder untracked) tidak ikut di-commit. Hook `LaporLintas Monitor` berjalan saat commit dan mencatat ke audit log.
+
+---
+
+## CHANGE-20261117-003 — PUSH BRANCH KE GITHUB
+
+**Date:** 17 November 2026  
+**Time:** Tidak tersedia  
+**Category:** VERSION CONTROL / GITHUB  
+**Status:** PUSH SUCCESSFUL
+
+### 1. Original Developer Prompt
+
+"push branch ini ke github"
+
+### 2. Result
+
+Branch `fix/bug-alur-sistem` di-push ke `origin` (`scytheaxee-boop/Sistem-Pelaporan-Pelanggaran-Lalu-Lintas`) dengan upstream tracking. Branch `main` tidak berubah. Pull request belum dibuat.
+
+---
+
+## CHANGE-20261117-004 — ATURAN PEMBARUAN CHANGELOG
+
+**Date:** 17 November 2026  
+**Time:** Tidak tersedia  
+**Category:** DOCUMENTATION  
+**Status:** REQUIREMENT RECORDED
+
+### 1. Original Developer Prompt
+
+"jangan lupa juga kalo ada perubahan tambahkan/update di file ini juga."
+
+### 2. Result
+
+Setiap perubahan berikutnya pada sistem dicatat di `CHANGELOG.md` dengan format `CHANGE-YYYYMMDD-NNN`. Entri CHANGE-20261117-001 s.d. 004 ditambahkan.
+
+---
+
+## CHANGE-20261117-005 — COMMIT DAN PUSH PEMBARUAN CHANGELOG
+
+**Date:** 17 November 2026  
+**Time:** Tidak tersedia  
+**Category:** VERSION CONTROL / DOCUMENTATION  
+**Status:** COMMITTED AND PUSHED
+
+### 1. Original Developer Prompt
+
+"ya, commit dan push"
+
+### 2. Result
+
+`CHANGELOG.md` (entri CHANGE-20261117-001 s.d. 005) di-commit ke branch `fix/bug-alur-sistem` dengan pesan `docs: catat perbaikan bug 17 November 2026 di CHANGELOG`, lalu di-push ke `origin`. Branch `main` tidak berubah.
+
+---
+
 # HISTORICAL DEVELOPMENT SUMMARY
 
 ## 1. Project Milestones
@@ -1205,6 +1364,7 @@ SRS SYNCHRONIZATION
 | 29 October 2026 | GitHub push | Recorded as successful |
 | 02 November 2026 | Workflow documentation request | Recorded |
 | 08 November 2026 | Change tracking agent design | Requirements recorded |
+| 17 November 2026 | Bug fix alur sistem (`fix/bug-alur-sistem`) | Committed `872aefc`, pushed |
 
 ## 2. Known Source Code Files
 
@@ -1223,7 +1383,9 @@ src/
 ```text
 supabase/
 ├── README.md
-└── schema.sql
+├── schema.sql
+└── migrations/
+    └── 20261117_fix_bug_alur.sql
 ```
 
 ## 4. Known Database Components
@@ -1245,7 +1407,7 @@ supabase/
 
 Commit recorded:
 
-`20aaa81`
+`20aaa81`, `cee98e1`, `872aefc` (branch `fix/bug-alur-sistem`)
 
 Repository:
 
@@ -1270,7 +1432,7 @@ Repository:
 
 # NEXT DEVELOPMENT RECORD
 
-Setiap prompt baru harus ditambahkan setelah CHANGE-022 dengan ID berikutnya.
+Setiap prompt baru harus ditambahkan setelah entri terakhir (saat ini CHANGE-20261117-005) dengan ID berikutnya.
 
 Format:
 
