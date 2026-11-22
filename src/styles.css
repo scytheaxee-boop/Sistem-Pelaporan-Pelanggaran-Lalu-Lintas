@@ -23,3 +23,248 @@
 .topbar-brand-wrap .crumb-sep{color:#d0d5dd}
 .topbar-brand-wrap>b{color:#344054;font-size:13px;font-weight:700}
 
+/* Splash Screen Styling */
+.splash-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: radial-gradient(circle at 50% 45%, #0f2757 0%, #071530 65%, #030a17 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  overflow: hidden;
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  user-select: none;
+}
+.splash-fade-out {
+  opacity: 0;
+  transform: scale(1.05);
+  pointer-events: none;
+}
+.splash-ambient-glow {
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.4) 0%, rgba(21, 94, 239, 0.1) 45%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(40px);
+  animation: splashAmbient 3.2s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes splashAmbient {
+  0% { transform: scale(0.85); opacity: 0.6; }
+  100% { transform: scale(1.25); opacity: 1; }
+}
+.splash-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.splash-badge-wrap {
+  position: relative;
+  margin-bottom: 24px;
+}
+.splash-badge {
+  width: 96px;
+  height: 96px;
+  border-radius: 28px;
+  background: linear-gradient(135deg, #3b82f6 0%, #155eef 50%, #1042c0 100%);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 18px 45px rgba(21, 94, 239, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.22) inset;
+  animation: splashBadgePop 0.9s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+.splash-icon {
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.25));
+  animation: splashIconFloat 2.2s ease-in-out infinite alternate;
+}
+.splash-ring-pulse {
+  position: absolute;
+  inset: -14px;
+  border-radius: 38px;
+  border: 2px solid rgba(96, 165, 250, 0.6);
+  animation: splashRing 2.2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+.splash-ring-pulse.secondary {
+  animation-delay: 0.7s;
+}
+@keyframes splashRing {
+  0% { transform: scale(0.85); opacity: 0.9; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+@keyframes splashBadgePop {
+  0% { transform: scale(0.4) rotate(-10deg); opacity: 0; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+@keyframes splashIconFloat {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-4px); }
+}
+.splash-text-wrap {
+  animation: splashTextFade 0.8s ease-out 0.35s both;
+}
+@keyframes splashTextFade {
+  0% { opacity: 0; transform: translateY(14px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.splash-title {
+  font: 800 36px/1.1 Manrope, sans-serif;
+  letter-spacing: -1.2px;
+  color: #ffffff;
+  margin: 0 0 8px;
+}
+.splash-title span {
+  background: linear-gradient(135deg, #93c5fd, #60a5fa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.splash-subtitle {
+  font: 700 11px/1.4 'DM Sans', sans-serif;
+  letter-spacing: 2.2px;
+  color: #9cb3db;
+  margin: 0 0 30px;
+}
+.splash-loader-bar {
+  width: 150px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 99px;
+  overflow: hidden;
+  position: relative;
+  animation: splashLoaderFade 0.8s ease-out 0.45s both;
+}
+@keyframes splashLoaderFade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+.splash-loader-progress {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #38bdf8, #2563eb, #60a5fa);
+  border-radius: 99px;
+  transform-origin: left;
+  animation: splashLoadAnim 2s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+@keyframes splashLoadAnim {
+  0% { transform: scaleX(0); }
+  55% { transform: scaleX(0.72); }
+  100% { transform: scaleX(1); }
+}
+
+/* Gated & Blur Sections for Guest / Belum Login */
+.gated-container {
+  position: relative;
+  margin-top: 26px;
+}
+.gated-blur-area {
+  filter: blur(8px);
+  opacity: 0.38;
+  pointer-events: none;
+  user-select: none;
+  transition: filter 0.35s ease, opacity 0.35s ease;
+}
+.gated-lock-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 36px;
+  z-index: 10;
+}
+.gated-card {
+  max-width: 530px;
+  width: 92%;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid #d0dff8;
+  border-radius: 20px;
+  padding: 36px 30px;
+  text-align: center;
+  box-shadow: 0 25px 60px rgba(16, 42, 86, 0.16), 0 0 0 1px rgba(255, 255, 255, 0.8) inset;
+  animation: gatedCardEntrance 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes gatedCardEntrance {
+  0% { opacity: 0; transform: translateY(28px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.gated-lock-badge {
+  width: 62px;
+  height: 62px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #e8f1ff 0%, #d5e6ff 100%);
+  color: #155eef;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 18px;
+  box-shadow: 0 8px 22px rgba(21, 94, 239, 0.16);
+}
+.gated-card h3 {
+  font: 800 22px/1.2 Manrope, sans-serif;
+  letter-spacing: -0.6px;
+  color: #152b4b;
+  margin: 0 0 10px;
+}
+.gated-card p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #64748b;
+  margin: 0 0 26px;
+}
+.gated-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  align-items: center;
+}
+.gated-actions .button {
+  width: 100%;
+  max-width: 320px;
+  padding: 12px 18px;
+  font-size: 13px;
+}
+.gated-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #8b96a7;
+  font-size: 11px;
+  margin-top: 20px;
+}
+.gated-note svg {
+  color: #16a36a;
+}
+.button-lg {
+  padding: 12px 20px;
+  font-size: 13px;
+  border-radius: 9px;
+}
+.hero-highlight-btn {
+  background: #ffffff !important;
+  color: #155eef !important;
+  font-size: 13px !important;
+  padding: 12px 22px !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.16) !important;
+  font-weight: 800 !important;
+  animation: pulseHeroBtn 2.4s ease-in-out infinite;
+}
+@keyframes pulseHeroBtn {
+  0%, 100% { transform: scale(1); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.16); }
+  50% { transform: scale(1.03); box-shadow: 0 8px 25px rgba(255, 255, 255, 0.4); }
+}
+@media(max-width:580px){
+  .splash-badge { width: 80px; height: 80px; border-radius: 24px; }
+  .splash-title { font-size: 29px; }
+  .splash-subtitle { font-size: 10px; }
+  .gated-card { padding: 26px 18px; }
+  .gated-card h3 { font-size: 19px; }
+  .gated-card p { font-size: 12px; }
+}
+

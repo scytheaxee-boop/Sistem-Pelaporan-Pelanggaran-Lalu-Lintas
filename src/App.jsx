@@ -3,9 +3,9 @@ import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from
 import {
   AlertCircle, ArrowDownToLine, ArrowLeft, ArrowRight, Bell, Camera, Check,
   CheckCircle2, ChevronDown, CircleHelp, Clock3, FileCheck2, FileImage, FilePlus2,
-  Filter, Flag, Gauge, ImagePlus, Info, LayoutDashboard, LogIn, LogOut, MapPin,
+  Filter, Flag, Gauge, ImagePlus, Info, LayoutDashboard, Lock, LogIn, LogOut, MapPin,
   Menu, MessageSquareText, Plus, RefreshCw, Search, ShieldCheck, TrafficCone,
-  UserRound, Users, X
+  UserPlus, UserRound, Users, X
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { CATEGORIES, STATUS, formatDate, shortId } from './lib/reports';
@@ -159,7 +159,54 @@ function Protected({session, admin, children}) {
   return children;
 }
 
+function SplashScreen({ onFinish }) {
+  const [fading, setFading] = useState(false);
+
+  useEffect(() => {
+    const timer1 = setTimeout(() => setFading(true), 2100);
+    const timer2 = setTimeout(() => onFinish(), 2700);
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [onFinish]);
+
+  function handleSkip() {
+    setFading(true);
+    setTimeout(onFinish, 450);
+  }
+
+  return (
+    <div
+      className={`splash-screen ${fading ? 'splash-fade-out' : ''}`}
+      onClick={handleSkip}
+      role="button"
+      tabIndex={0}
+      aria-label="Lewati splash screen"
+    >
+      <div className="splash-ambient-glow" />
+      <div className="splash-content">
+        <div className="splash-badge-wrap">
+          <div className="splash-ring-pulse" />
+          <div className="splash-ring-pulse secondary" />
+          <div className="splash-badge">
+            <TrafficCone size={48} className="splash-icon" />
+          </div>
+        </div>
+        <div className="splash-text-wrap">
+          <h1 className="splash-title">Lapor<span>Lintas</span></h1>
+          <p className="splash-subtitle">SISTEM PELAPORAN PELANGGARAN LALU LINTAS</p>
+        </div>
+        <div className="splash-loader-bar">
+          <div className="splash-loader-progress" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HomePage({session, profile}) {
+  const [showSplash, setShowSplash] = useState(() => !session);
   const [stats, setStats] = useState({total:0,pending:0,progress:0,completed:0});
   const [recent, setRecent] = useState([]);
   const [busy, setBusy] = useState(true);
@@ -181,24 +228,74 @@ function HomePage({session, profile}) {
     fetchData();
     return () => { active = false; };
   }, [session, profile]);
-  return <>
-    <section className="hero-panel">
-      <div className="hero-copy"><div className="eyebrow"><span className="eyebrow-dot"/> PLATFORM PELAPORAN PUBLIK</div><h1>Wujudkan lalu lintas<br/><span>yang lebih tertib.</span></h1><p>Laporkan kondisi atau dugaan pelanggaran lalu lintas dengan informasi yang jelas agar dapat diverifikasi dan ditindaklanjuti oleh pihak berwenang.</p><div className="hero-actions"><Link to={session?'/buat-laporan':'/auth'} className="button button-white"><Plus size={17}/> Buat laporan <ArrowRight size={16}/></Link><Link to={{pathname:'/',hash:'#panduan'}} className="hero-link">Pelajari alurnya <ArrowRight size={15}/></Link></div></div>
-      <div className="hero-art"><div className="art-circle circle-one"/><div className="art-circle circle-two"/><div className="road-illustration"><div className="road-line"/><div className="road-line"/><div className="road-pin"><MapPin size={26}/></div><div className="road-card"><span className="road-card-icon"><CheckCircle2 size={17}/></span><span><b>Pelaporan tercatat</b><small>Menunggu verifikasi</small></span></div></div><div className="hero-mini-stat"><ShieldCheck size={16}/><span>Verifikasi sebelum tindak lanjut</span></div></div>
-    </section>
-    <div className="section-heading"><div><h2>Ringkasan laporan</h2><p>{profile?.role==='admin'?'Pantau laporan yang masuk ke sistem.':'Pantau laporan Anda setelah masuk ke akun.'}</p></div>{session && <Link className="text-link" to={profile?.role==='admin'?'/admin':'/laporan-saya'}>Lihat semua <ArrowRight size={15}/></Link>}</div>
-    {!session && <div className="notice notice-info"><Info size={18}/> Masuk untuk melihat ringkasan dan memantau laporan Anda. <Link to="/auth">Masuk sekarang <ArrowRight size={14}/></Link></div>}
-    <div className="stats-grid">
-      <StatCard icon={<FileCheck2 size={19}/>} label="Total laporan" value={session?(busy?'…':stats.total):'—'} tone="blue" foot="Laporan yang tercatat"/>
-      <StatCard icon={<Clock3 size={19}/>} label="Menunggu verifikasi" value={session?(busy?'…':stats.pending):'—'} tone="orange" foot="Menunggu pemeriksaan"/>
-      <StatCard icon={<ArrowDownToLine size={19}/>} label="Dalam tindak lanjut" value={session?(busy?'…':stats.progress):'—'} tone="purple" foot="Diteruskan ke pihak terkait"/>
-      <StatCard icon={<CheckCircle2 size={19}/>} label="Selesai" value={session?(busy?'…':stats.completed):'—'} tone="green" foot="Status telah diselesaikan"/>
-    </div>
-    <section className="content-card recent-card"><div className="card-heading"><div><h3>Laporan terbaru</h3><p>Aktivitas laporan yang terakhir tercatat.</p></div>{session && <Link to={profile?.role==='admin'?'/admin':'/laporan-saya'} className="button button-secondary button-sm">Lihat semua</Link>}</div>
-      {!session ? <div className="empty-inline"><FileCheck2 size={23}/><span>Masuk untuk melihat laporan terbaru Anda.</span></div> : recent.length===0 ? <div className="empty-inline"><FileImage size={23}/><span>Belum ada laporan. Mulai dengan membuat laporan pertama.</span><Link to="/buat-laporan">Buat laporan</Link></div> : <ReportTable reports={recent} compact/>}
-    </section>
-    <section className="how-section" id="panduan"><div className="section-heading"><div><h2>Bagaimana prosesnya?</h2><p>Setiap laporan melewati tahapan pemeriksaan sebelum ditindaklanjuti.</p></div></div><div className="steps-grid"><Step n="01" icon={<FilePlus2/>} title="Kirim laporan" text="Isi detail kejadian, kategori, lokasi, dan foto pendukung jika tersedia."/><Step n="02" icon={<ShieldCheck/>} title="Verifikasi admin" text="Admin meninjau kelengkapan, relevansi, dan kewajaran informasi."/><Step n="03" icon={<MessageSquareText/>} title="Status diperbarui" text="Pelapor dapat memantau status dan catatan tindak lanjut." /></div><div className="disclaimer"><Info size={18}/><p><b>Perlu diketahui:</b> laporan yang dikirim merupakan informasi awal untuk pemeriksaan. Laporan yang diteruskan tidak otomatis membuktikan pelanggaran atau menjadi bukti pelanggaran resmi.</p></div></section>
-  </>;
+
+  const restContent = (
+    <>
+      <div className="section-heading"><div><h2>Ringkasan laporan</h2><p>{profile?.role==='admin'?'Pantau laporan yang masuk ke sistem.':'Pantau laporan Anda setelah masuk ke akun.'}</p></div>{session && <Link className="text-link" to={profile?.role==='admin'?'/admin':'/laporan-saya'}>Lihat semua <ArrowRight size={15}/></Link>}</div>
+      <div className="stats-grid">
+        <StatCard icon={<FileCheck2 size={19}/>} label="Total laporan" value={session?(busy?'…':stats.total):'—'} tone="blue" foot="Laporan yang tercatat"/>
+        <StatCard icon={<Clock3 size={19}/>} label="Menunggu verifikasi" value={session?(busy?'…':stats.pending):'—'} tone="orange" foot="Menunggu pemeriksaan"/>
+        <StatCard icon={<ArrowDownToLine size={19}/>} label="Dalam tindak lanjut" value={session?(busy?'…':stats.progress):'—'} tone="purple" foot="Diteruskan ke pihak terkait"/>
+        <StatCard icon={<CheckCircle2 size={19}/>} label="Selesai" value={session?(busy?'…':stats.completed):'—'} tone="green" foot="Status telah diselesaikan"/>
+      </div>
+      <section className="content-card recent-card"><div className="card-heading"><div><h3>Laporan terbaru</h3><p>Aktivitas laporan yang terakhir tercatat.</p></div>{session && <Link to={profile?.role==='admin'?'/admin':'/laporan-saya'} className="button button-secondary button-sm">Lihat semua</Link>}</div>
+        {!session ? <div className="empty-inline"><FileCheck2 size={23}/><span>Masuk untuk melihat laporan terbaru Anda.</span></div> : recent.length===0 ? <div className="empty-inline"><FileImage size={23}/><span>Belum ada laporan. Mulai dengan membuat laporan pertama.</span><Link to="/buat-laporan">Buat laporan</Link></div> : <ReportTable reports={recent} compact/>}
+      </section>
+      <section className="how-section" id="panduan"><div className="section-heading"><div><h2>Bagaimana prosesnya?</h2><p>Setiap laporan melewati tahapan pemeriksaan sebelum ditindaklanjuti.</p></div></div><div className="steps-grid"><Step n="01" icon={<FilePlus2/>} title="Kirim laporan" text="Isi detail kejadian, kategori, lokasi, dan foto pendukung jika tersedia."/><Step n="02" icon={<ShieldCheck/>} title="Verifikasi admin" text="Admin meninjau kelengkapan, relevansi, dan kewajaran informasi."/><Step n="03" icon={<MessageSquareText/>} title="Status diperbarui" text="Pelapor dapat memantau status dan catatan tindak lanjut." /></div><div className="disclaimer"><Info size={18}/><p><b>Perlu diketahui:</b> laporan yang dikirim merupakan informasi awal untuk pemeriksaan. Laporan yang diteruskan tidak otomatis membuktikan pelanggaran atau menjadi bukti pelanggaran resmi.</p></div></section>
+    </>
+  );
+
+  return (
+    <>
+      {!session && showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+      <section className="hero-panel">
+        <div className="hero-copy">
+          <div className="eyebrow"><span className="eyebrow-dot"/> PLATFORM PELAPORAN PUBLIK</div>
+          <h1>Wujudkan lalu lintas<br/><span>yang lebih tertib.</span></h1>
+          <p>Laporkan kondisi atau dugaan pelanggaran lalu lintas dengan informasi yang jelas agar dapat diverifikasi dan ditindaklanjuti oleh pihak berwenang.</p>
+          <div className="hero-actions">
+            {session ? (
+              <Link to="/buat-laporan" className="button button-white"><Plus size={17}/> Buat laporan <ArrowRight size={16}/></Link>
+            ) : (
+              <Link to="/auth" className="button button-white hero-highlight-btn"><LogIn size={17}/> Masuk / Daftar Akun <ArrowRight size={16}/></Link>
+            )}
+            <Link to={{pathname:'/',hash:'#panduan'}} className="hero-link">Pelajari alurnya <ArrowRight size={15}/></Link>
+          </div>
+        </div>
+        <div className="hero-art">
+          <div className="art-circle circle-one"/><div className="art-circle circle-two"/>
+          <div className="road-illustration">
+            <div className="road-line"/><div className="road-line"/>
+            <div className="road-pin"><MapPin size={26}/></div>
+            <div className="road-card"><span className="road-card-icon"><CheckCircle2 size={17}/></span><span><b>Pelaporan tercatat</b><small>Menunggu verifikasi</small></span></div>
+          </div>
+          <div className="hero-mini-stat"><ShieldCheck size={16}/><span>Verifikasi sebelum tindak lanjut</span></div>
+        </div>
+      </section>
+
+      {!session ? (
+        <div className="gated-container">
+          <div className="gated-blur-area" aria-hidden="true">
+            {restContent}
+          </div>
+          <div className="gated-lock-overlay">
+            <div className="gated-card">
+              <div className="gated-lock-badge"><Lock size={26}/></div>
+              <h3>Akses Pelaporan Terkunci</h3>
+              <p>Silakan masuk atau daftarkan akun terlebih dahulu sebelum mengakses dan menggunakan seluruh fitur sistem pelaporan <b>LaporLintas</b>.</p>
+              <div className="gated-actions">
+                <Link to="/auth" className="button button-primary button-lg"><LogIn size={18}/> Masuk ke Akun Anda <ArrowRight size={16}/></Link>
+                <Link to="/auth" className="button button-secondary button-lg"><UserPlus size={18}/> Daftar Akun Baru</Link>
+              </div>
+              <div className="gated-note"><ShieldCheck size={15}/> Sistem pelaporan masyarakat yang aman & terverifikasi</div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        restContent
+      )}
+    </>
+  );
 }
 
 function StatCard({icon,label,value,tone,foot}) {

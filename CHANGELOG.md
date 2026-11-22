@@ -1366,6 +1366,7 @@ Setiap perubahan berikutnya pada sistem dicatat di `CHANGELOG.md` dengan format 
 | 08 November 2026 | Change tracking agent design | Requirements recorded |
 | 17 November 2026 | Bug fix alur sistem (`fix/bug-alur-sistem`) | Committed `872aefc`, pushed |
 | 23 November 2026 | Removed other menus in admin page and into just purely an admin dashboard | Completed |
+| 23 November 2026 | Added animated splash screen & gated blurred landing view for guests | Completed |
 
 ## 2. Known Source Code Files
 
