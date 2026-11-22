@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertCircle, ArrowDownToLine, ArrowLeft, ArrowRight, Bell, Camera, Check,
   CheckCircle2, ChevronDown, CircleHelp, Clock3, FileCheck2, FileImage, FilePlus2,
@@ -85,33 +85,45 @@ function App() {
 
   const isAdmin = profile?.role === 'admin';
   return (
-    <div className="app-shell">
-      <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}>
-        <Link to="/" className="brand" onClick={() => setMobileNav(false)}>
-          <span className="brand-mark"><TrafficCone size={23} /></span>
-          <span><b>LaporLintas</b><small>Pelaporan masyarakat</small></span>
-        </Link>
-        <div className="workspace-label">MENU UTAMA</div>
-        <nav className="side-nav">
-          <NavLink to="/" end className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}><Gauge size={18}/> Ringkasan</NavLink>
-          {session && <NavLink to="/laporan-saya" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}><FileCheck2 size={18}/> Laporan Saya</NavLink>}
-          {session && <NavLink to="/buat-laporan" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}><FilePlus2 size={18}/> Buat Laporan</NavLink>}
-          {isAdmin && <div className="nav-divider" />}
-          {isAdmin && <div className="workspace-label">ADMINISTRATOR</div>}
-          {isAdmin && <NavLink to="/admin" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}><LayoutDashboard size={18}/> Dashboard Admin</NavLink>}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="help-card"><span className="help-icon"><CircleHelp size={17}/></span><b>Butuh bantuan?</b><p>Laporkan informasi yang jelas dan sesuai fakta.</p><Link to={{pathname:'/',hash:'#panduan'}} onClick={() => setMobileNav(false)}>Lihat panduan <ArrowRight size={13}/></Link></div>
-          <div className="sidebar-foot"><ShieldCheck size={15}/> Pelaporan yang bertanggung jawab</div>
-        </div>
-      </aside>
-      {mobileNav && <button aria-label="Tutup menu" className="mobile-scrim" onClick={() => setMobileNav(false)} />}
+    <div className={`app-shell ${isAdmin ? 'admin-shell' : ''}`}>
+      {!isAdmin && (
+        <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}>
+          <Link to="/" className="brand" onClick={() => setMobileNav(false)}>
+            <span className="brand-mark"><TrafficCone size={23} /></span>
+            <span><b>LaporLintas</b><small>Pelaporan masyarakat</small></span>
+          </Link>
+          <div className="workspace-label">MENU UTAMA</div>
+          <nav className="side-nav">
+            <NavLink to="/" end className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}><Gauge size={18}/> Ringkasan</NavLink>
+            {session && <NavLink to="/laporan-saya" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}><FileCheck2 size={18}/> Laporan Saya</NavLink>}
+            {session && <NavLink to="/buat-laporan" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}><FilePlus2 size={18}/> Buat Laporan</NavLink>}
+          </nav>
+          <div className="sidebar-bottom">
+            <div className="help-card"><span className="help-icon"><CircleHelp size={17}/></span><b>Butuh bantuan?</b><p>Laporkan informasi yang jelas dan sesuai fakta.</p><Link to={{pathname:'/',hash:'#panduan'}} onClick={() => setMobileNav(false)}>Lihat panduan <ArrowRight size={13}/></Link></div>
+            <div className="sidebar-foot"><ShieldCheck size={15}/> Pelaporan yang bertanggung jawab</div>
+          </div>
+        </aside>
+      )}
+      {!isAdmin && mobileNav && <button aria-label="Tutup menu" className="mobile-scrim" onClick={() => setMobileNav(false)} />}
       <div className="main-column">
         <header className="topbar">
-          <button className="icon-button mobile-menu" aria-label="Buka menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={20}/></button>
-          <div className="breadcrumb"><span>Workspace</span><span className="crumb-sep">/</span><b>{pageName(location.pathname)}</b></div>
+          {isAdmin ? (
+            <div className="topbar-brand-wrap">
+              <Link to="/admin" className="brand-inline">
+                <span className="brand-mark sm"><TrafficCone size={19} /></span>
+                <span><b>LaporLintas</b><small>Panel Administrator</small></span>
+              </Link>
+              <span className="crumb-sep">/</span>
+              <b>Dashboard Admin</b>
+            </div>
+          ) : (
+            <>
+              <button className="icon-button mobile-menu" aria-label="Buka menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={20}/></button>
+              <div className="breadcrumb"><span>Workspace</span><span className="crumb-sep">/</span><b>{pageName(location.pathname)}</b></div>
+            </>
+          )}
           <div className="topbar-actions">
-            <span className="secure-chip"><ShieldCheck size={15}/> Sistem pelaporan</span>
+            <span className="secure-chip"><ShieldCheck size={15}/> {isAdmin ? 'Pusat kendali' : 'Sistem pelaporan'}</span>
             {session ? <div className="user-menu"><div className="avatar">{(profile?.full_name || session.user.email || 'U').slice(0,1).toUpperCase()}</div><div className="user-info"><b>{profile?.full_name || 'Pengguna'}</b><small>{isAdmin ? 'Administrator' : 'Masyarakat'}</small></div><button className="icon-button" title="Keluar" onClick={signOut}><LogOut size={17}/></button></div>
             : <Link to="/auth" className="button button-primary button-sm"><LogIn size={16}/> Masuk</Link>}
           </div>
@@ -119,15 +131,15 @@ function App() {
         {profileError && <div className="notice notice-error"><AlertCircle size={18}/>{profileError}</div>}
         <main className="page-content">
           <Routes>
-            <Route path="/" element={<HomePage session={session} profile={profile} />} />
-            <Route path="/auth" element={<AuthPage session={session} />} />
-            <Route path="/buat-laporan" element={<Protected session={session}><CreateReportPage session={session}/></Protected>} />
-            <Route path="/laporan-saya" element={<Protected session={session}><MyReportsPage session={session}/></Protected>} />
+            <Route path="/" element={isAdmin ? <Navigate to="/admin" replace /> : <HomePage session={session} profile={profile} />} />
+            <Route path="/auth" element={isAdmin ? <Navigate to="/admin" replace /> : <AuthPage session={session} profile={profile} isAdmin={isAdmin} />} />
+            <Route path="/buat-laporan" element={isAdmin ? <Navigate to="/admin" replace /> : <Protected session={session}><CreateReportPage session={session}/></Protected>} />
+            <Route path="/laporan-saya" element={isAdmin ? <Navigate to="/admin" replace /> : <Protected session={session}><MyReportsPage session={session}/></Protected>} />
             <Route path="/admin" element={<Protected session={session} admin={isAdmin}><AdminPage profile={profile}/></Protected>} />
-            <Route path="*" element={<NotFound/>}/>
+            <Route path="*" element={<NotFound isAdmin={isAdmin} />}/>
           </Routes>
         </main>
-        <footer className="footer"><span>© {new Date().getFullYear()} LaporLintas</span><span><ShieldCheck size={14}/> Informasi diverifikasi sebelum tindak lanjut</span></footer>
+        <footer className="footer"><span>© {new Date().getFullYear()} LaporLintas</span><span><ShieldCheck size={14}/> {isAdmin ? 'Panel Kontrol Administrator' : 'Informasi diverifikasi sebelum tindak lanjut'}</span></footer>
       </div>
     </div>
   );
@@ -194,7 +206,7 @@ function StatCard({icon,label,value,tone,foot}) {
 }
 function Step({n,icon,title,text}) {return <div className="step-card"><div className="step-top"><span className="step-number">{n}</span><span className="step-icon">{icon}</span></div><h3>{title}</h3><p>{text}</p></div>;}
 
-function AuthPage({session}) {
+function AuthPage({session, profile, isAdmin}) {
   const navigate = useNavigate();
   const [mode,setMode] = useState('login');
   const [name,setName] = useState('');
@@ -203,7 +215,15 @@ function AuthPage({session}) {
   const [busy,setBusy] = useState(false);
   const [message,setMessage] = useState('');
   const [error,setError] = useState('');
-  useEffect(()=>{if(session) navigate('/');},[session,navigate]);
+  useEffect(()=>{
+    if(session) {
+      if(isAdmin) {
+        navigate('/admin', { replace: true });
+      } else if (profile !== null) {
+        navigate('/', { replace: true });
+      }
+    }
+  },[session,profile,isAdmin,navigate]);
   async function submit(e) {
     e.preventDefault(); setBusy(true); setError(''); setMessage('');
     try {
@@ -213,8 +233,15 @@ function AuthPage({session}) {
         if(data.session) { setMessage('Akun berhasil dibuat.'); navigate('/'); }
         else setMessage('Pendaftaran berhasil. Periksa email untuk konfirmasi sebelum masuk.');
       } else {
-        const {error:err} = await supabase.auth.signInWithPassword({email,password});
+        const {data,error:err} = await supabase.auth.signInWithPassword({email,password});
         if(err) throw err;
+        if (data?.user) {
+          const { data: prof } = await supabase.from('profiles').select('role').eq('id', data.user.id).maybeSingle();
+          if (prof?.role === 'admin') {
+            navigate('/admin', { replace: true });
+            return;
+          }
+        }
         navigate('/');
       }
     } catch(err) { setError(err.message || 'Autentikasi gagal.'); }
@@ -318,6 +345,6 @@ function StatusBadge({status}) {const s=STATUS[status]||STATUS.pending;return <s
 function ReportTable({reports}) {return <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>ID / Tanggal</th><th>Kategori</th><th>Lokasi</th><th>Status</th></tr></thead><tbody>{reports.map(r=><tr key={r.id}><td><b>{shortId(r.id)}</b><small>{formatDate(r.created_at)}</small></td><td>{r.category}</td><td className="location-cell">{r.location}</td><td><StatusBadge status={r.status}/></td></tr>)}</tbody></table></div>;}
 function LoadingRows() {return <div className="loading-rows"><div/><div/><div/></div>;}
 function EmptyState({title,text}) {return <div className="empty-state"><div className="empty-icon"><Search size={23}/></div><h3>{title}</h3><p>{text}</p></div>;}
-function NotFound() {return <div className="center-state"><div className="empty-icon"><AlertCircle size={25}/></div><h2>Halaman tidak ditemukan</h2><p>Halaman yang Anda cari tidak tersedia.</p><Link to="/" className="button button-primary">Kembali ke beranda</Link></div>;}
+function NotFound({isAdmin}) {return <div className="center-state"><div className="empty-icon"><AlertCircle size={25}/></div><h2>Halaman tidak ditemukan</h2><p>Halaman yang Anda cari tidak tersedia.</p><Link to={isAdmin ? "/admin" : "/"} className="button button-primary">{isAdmin ? 'Kembali ke dashboard' : 'Kembali ke beranda'}</Link></div>;}
 
 export default App;
