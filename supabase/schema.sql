@@ -78,6 +78,18 @@ CREATE TABLE IF NOT EXISTS public.reports (
 
     reviewed_at TIMESTAMPTZ,
 
+    -- Moderasi AI Spam Detection (opsional)
+    spam_prediction TEXT
+        CHECK (spam_prediction IS NULL OR spam_prediction IN ('NORMAL', 'SPAM')),
+    spam_probability DOUBLE PRECISION
+        CHECK (spam_probability IS NULL OR (spam_probability >= 0.0 AND spam_probability <= 1.0)),
+    normal_probability DOUBLE PRECISION
+        CHECK (normal_probability IS NULL OR (normal_probability >= 0.0 AND normal_probability <= 1.0)),
+    spam_model_version TEXT DEFAULT '1.0.0',
+    spam_checked_at TIMESTAMPTZ,
+    admin_spam_verification TEXT
+        CHECK (admin_spam_verification IS NULL OR admin_spam_verification IN ('verified_normal', 'verified_spam', 'dismissed')),
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -433,6 +445,17 @@ WITH CHECK (
     AND status = 'pending'
 );
 
+DROP POLICY IF EXISTS "reports_admin_update_spam"
+    ON public.reports;
+
+CREATE POLICY "reports_admin_update_spam"
+ON public.reports
+FOR UPDATE
+TO authenticated
+USING (public.is_admin())
+WITH CHECK (public.is_admin());
+
+
 
 -- ------------------------------------------------------------
 -- REPORT STATUS HISTORY POLICIES
@@ -468,8 +491,12 @@ REVOKE DELETE ON public.reports FROM anon, authenticated;
 REVOKE UPDATE ON public.reports FROM anon;
 
 GRANT SELECT, INSERT ON public.reports TO authenticated;
-GRANT UPDATE (category, description, location, latitude, longitude, incident_time, photo_path, status, updated_at)
-    ON public.reports TO authenticated;
+GRANT UPDATE (
+    category, description, location, latitude, longitude,
+    incident_time, photo_path, status, updated_at,
+    spam_prediction, spam_probability, normal_probability,
+    spam_model_version, spam_checked_at, admin_spam_verification
+) ON public.reports TO authenticated;
 GRANT SELECT ON public.profiles TO authenticated;
 GRANT SELECT ON public.report_status_history TO authenticated;
 
