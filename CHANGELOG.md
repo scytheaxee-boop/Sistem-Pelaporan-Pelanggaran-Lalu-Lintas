@@ -1365,9 +1365,12 @@ Setiap perubahan berikutnya pada sistem dicatat di `CHANGELOG.md` dengan format 
 | 02 November 2026 | Workflow documentation request | Recorded |
 | 08 November 2026 | Change tracking agent design | Requirements recorded |
 | 17 November 2026 | Bug fix alur sistem (`fix/bug-alur-sistem`) | Committed `872aefc`, pushed |
-| 23 November 2026 | Removed other menus in admin page and into just purely an admin dashboard | Completed |
+| 22 November 2026 | Removed other menus in admin page and into just purely an admin dashboard | Completed |
 | 23 November 2026 | Added animated splash screen & gated blurred landing view for guests | Completed |
 | 23 November 2026 | Added reporter username in admin dashboard & user edit and resubmit feature | Completed |
+| 23 November 2026 | Implemented AI Spam Detection using Multinomial Naive Bayes & FastAPI | Completed |
+| 23 November 2026 | Automated AI Spam Detection in background & cleaned citizen report form | Completed |
+| 23 November 2026 | Configured `ml-service` import paths for seamless standalone startup | Completed |
 
 ## 2. Known Source Code Files
 
@@ -1388,7 +1391,33 @@ supabase/
 ├── README.md
 ├── schema.sql
 └── migrations/
-    └── 20261117_fix_bug_alur.sql
+    ├── 20261117_fix_bug_alur.sql
+    └── 20261123_ai_spam_detection.sql
+```
+
+## 4. Known Machine Learning Service Files
+
+```text
+ml-service/
+├── README.md
+├── requirements.txt
+├── app/
+│   ├── main.py
+│   ├── routes/
+│   │   └── spam.py
+│   └── services/
+│       └── spam_classifier.py
+├── datasets/
+│   ├── generate_dataset.py
+│   └── traffic_spam_dataset.csv
+├── evaluation/
+│   ├── confusion_matrix.png
+│   ├── evaluate_model.py
+│   └── metrics.json
+├── models/
+│   └── spam_detection_model.joblib
+└── training/
+    └── train_spam_model.py
 ```
 
 ## 4. Known Database Components
@@ -1415,6 +1444,87 @@ Commit recorded:
 Repository:
 
 `scytheaxee-boop/Sistem-Pelaporan-Pelanggaran-Lalu-Lintas`
+
+---
+
+---
+
+# 23 NOVEMBER 2026 — MONDAY
+
+## CHANGE-20261123-001 — IMPLEMENT AI SPAM DETECTION USING MULTINOMIAL NAIVE BAYES
+
+**Date:** 23 November 2026  
+**Day:** Monday  
+**Timezone:** Asia/Makassar (WITA)  
+**Task Type:** Machine Learning & API Integration  
+
+### 1. Requirements
+- Membangun model Machine Learning deteksi spam teks berbahasa Indonesia dengan algoritma Multinomial Naive Bayes dan TF-IDF FeatureUnion (Word 1-2 ngrams + Char_wb 3-5 ngrams).
+- Menyiapkan dataset seimbang (720 sampel: 360 normal, 360 spam), bertanda sintetis akademik.
+- Menyediakan layanan inferensi FastAPI dengan endpoint `POST /api/ml/detect-spam`.
+- Mengintegrasikan hasil deteksi ke dashboard admin dan database Supabase (kolom `spam_prediction`, `spam_probability`, `normal_probability`, `spam_model_version`, `spam_checked_at`, `admin_spam_verification`).
+- Menyediakan evaluasi lengkap (Confusion Matrix, metrics JSON, akurasi 99.31%, 0 False Positives).
+
+### 2. Files Created & Modified
+- `ml-service/datasets/generate_dataset.py` (Created)
+- `ml-service/datasets/traffic_spam_dataset.csv` (Created)
+- `ml-service/training/train_spam_model.py` (Created)
+- `ml-service/models/spam_detection_model.joblib` (Created)
+- `ml-service/evaluation/evaluate_model.py` (Created)
+- `ml-service/evaluation/metrics.json` (Created)
+- `ml-service/evaluation/confusion_matrix.png` (Created)
+- `ml-service/app/services/spam_classifier.py` (Created)
+- `ml-service/app/routes/spam.py` (Created)
+- `ml-service/app/main.py` (Created)
+- `ml-service/requirements.txt` (Created)
+- `ml-service/README.md` (Created)
+- `supabase/migrations/20261123_ai_spam_detection.sql` (Created)
+- `supabase/schema.sql` (Modified)
+- `src/App.jsx` (Modified)
+- `src/styles.css` (Modified)
+- `.env.example` (Created)
+
+### 3. Result
+Commit `878b7d1` di-push ke branch `main`.
+
+---
+
+## CHANGE-20261123-002 — AUTOMATE BACKGROUND AI SCANNING AND CLEAN CITIZEN FORM
+
+**Date:** 23 November 2026  
+**Day:** Monday  
+**Timezone:** Asia/Makassar (WITA)  
+**Task Type:** UI/UX & Moderation Flow Refactoring  
+
+### 1. Requirements
+- Menghapus komponen UI pemindai AI dari formulir pelaporan warga (`CreateReportPage` dan `EditReportModal`) agar formulir pelapor tetap bersih, tidak membingungkan pengguna, dan tidak menampilkan error "Failed to fetch" saat ML service offline.
+- Memproses deteksi spam secara 100% otomatis di latar belakang (*silent background scan*) saat laporan dikirimkan oleh pengguna.
+- Memperbarui Dashboard Admin (`AdminPage`) agar langsung menampilkan badge status AI Spam (`Normal` / `SPAM` dengan persentase) dan memindai otomatis secara real-time saat admin membuka detail laporan.
+
+### 2. Files Modified
+- `src/App.jsx` (Modified)
+
+### 3. Result
+Commit `6be16ee` di-push ke branch `main`.
+
+---
+
+## CHANGE-20261123-003 — STANDALONE STARTUP FIX FOR ML-SERVICE
+
+**Date:** 23 November 2026  
+**Day:** Monday  
+**Timezone:** Asia/Makassar (WITA)  
+**Task Type:** Backend & CLI Configuration  
+
+### 1. Requirements
+- Memperbaiki `ModuleNotFoundError: No module named 'app'` saat `python3 app/main.py` dijalankan langsung dari terminal di folder `ml-service`.
+- Menambahkan `sys.path.insert(0, str(BASE_DIR))` di awal `ml-service/app/main.py`.
+
+### 2. Files Modified
+- `ml-service/app/main.py` (Modified)
+
+### 3. Result
+Commit `feeede0` di-push ke branch `main`. Server FastAPI dapat dijalankan langsung dengan `python3 app/main.py`.
 
 ---
 
