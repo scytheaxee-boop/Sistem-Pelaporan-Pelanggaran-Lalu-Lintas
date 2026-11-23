@@ -368,89 +368,6 @@ async function checkSpamWithAI(description) {
   return await resp.json();
 }
 
-function AISpamChecker({description, onResultChange, currentResult}) {
-  const [checking, setChecking] = useState(false);
-  const [error, setError] = useState('');
-
-  async function check() {
-    const text = (description || '').trim();
-    if (!text) {
-      setError('Tulis deskripsi laporan terlebih dahulu sebelum melakukan pemeriksaan AI.');
-      return;
-    }
-    setChecking(true);
-    setError('');
-    try {
-      const res = await checkSpamWithAI(text);
-      onResultChange(res);
-    } catch (err) {
-      setError(err.message || 'Layanan AI Spam tidak dapat dihubungi. Pastikan service FastAPI aktif.');
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  return (
-    <div className="ai-spam-box">
-      <div className="ai-spam-header">
-        <div className="ai-title-wrap">
-          <span className="ai-badge-icon"><Sparkles size={16}/></span>
-          <div>
-            <b>AI Spam Detection</b>
-            <small>Multinomial Naive Bayes · Analisis relevansi laporan</small>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="button button-secondary button-sm ai-btn"
-          disabled={checking || !description.trim()}
-          onClick={check}
-        >
-          <Sparkles size={14}/> {checking ? 'Menganalisis…' : 'Periksa dengan AI'}
-        </button>
-      </div>
-
-      {checking && (
-        <div className="ai-status-inline">
-          <div className="spinner small"/> <span>Model AI sedang menganalisis deskripsi laporan…</span>
-        </div>
-      )}
-
-      {error && (
-        <div className="notice notice-error compact-notice">
-          <AlertCircle size={15}/> <span>{error} (Anda tetap dapat melanjutkan pengiriman laporan).</span>
-        </div>
-      )}
-
-      {currentResult && !checking && (
-        <div className={`ai-result-panel ${currentResult.is_spam ? 'is-spam' : 'is-normal'}`}>
-          <div className="ai-result-top">
-            <div className="ai-status-title">
-              {currentResult.is_spam ? <AlertCircle size={17} className="text-red"/> : <CheckCircle2 size={17} className="text-green"/>}
-              <strong>{currentResult.is_spam ? 'Status: Terindikasi Spam' : 'Status: Laporan Normal'}</strong>
-            </div>
-            <span className={`ai-prob-badge ${currentResult.is_spam ? 'spam' : 'normal'}`}>
-              {currentResult.is_spam
-                ? `Spam: ${(currentResult.spam_probability * 100).toFixed(1)}%`
-                : `Normal: ${(currentResult.normal_probability * 100).toFixed(1)}%`}
-            </span>
-          </div>
-          <p className="ai-recommendation">{currentResult.recommendation}</p>
-          {currentResult.is_spam ? (
-            <div className="ai-advice warning">
-              <Info size={14}/> <span><b>Saran:</b> Pengguna dapat mengedit deskripsi untuk memperjelas kejadian lalu lintas dan menekan kembali tombol "Periksa dengan AI".</span>
-            </div>
-          ) : (
-            <div className="ai-advice success">
-              <Check size={14}/> <span>Deskripsi tidak terindikasi spam. Pengguna dapat melanjutkan pengiriman laporan.</span>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function CreateReportPage({session}) {
   const navigate = useNavigate();
   const [category,setCategory] = useState(CATEGORIES[0]);
@@ -464,7 +381,6 @@ function CreateReportPage({session}) {
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState('');
   const [success,setSuccess] = useState('');
-  const [aiResult,setAiResult] = useState(null);
   useEffect(()=>()=>{if(preview) URL.revokeObjectURL(preview);},[preview]);
   function chooseFile(e) {
     const next=e.target.files?.[0]; if(!next) return;
@@ -500,6 +416,15 @@ function CreateReportPage({session}) {
         const {error:uploadError}=await supabase.storage.from('report-photos').upload(photoPath,file,{contentType:file.type,upsert:false});
         if(uploadError) throw uploadError;
       }
+
+      // Deteksi AI otomatis secara silent di background tanpa membebani warga
+      let autoAi = null;
+      try {
+        autoAi = await checkSpamWithAI(cleanDescription);
+      } catch (_) {
+        // Jika service ML offline, pelaporan warga tetap berjalan mulus
+      }
+
       const payload={
         user_id:session.user.id,
         category,
@@ -512,11 +437,11 @@ function CreateReportPage({session}) {
         status:'pending'
       };
 
-      if (aiResult) {
-        payload.spam_prediction = aiResult.prediction;
-        payload.spam_probability = aiResult.spam_probability;
-        payload.normal_probability = aiResult.normal_probability;
-        payload.spam_model_version = aiResult.model_version || '1.0.0';
+      if (autoAi) {
+        payload.spam_prediction = autoAi.prediction;
+        payload.spam_probability = autoAi.spam_probability;
+        payload.normal_probability = autoAi.normal_probability;
+        payload.spam_model_version = autoAi.model_version || '1.0.0';
         payload.spam_checked_at = new Date().toISOString();
       }
 
@@ -541,7 +466,7 @@ function CreateReportPage({session}) {
       setError(err.message||'Laporan gagal dikirim.');
     } finally {setBusy(false);}
   }
-  return <><PageTitle eyebrow="PELAPORAN MASYARAKAT" title="Buat laporan baru" subtitle="Sampaikan informasi kejadian secara jelas. Laporan akan ditinjau sebelum diteruskan."/><div className="form-layout"><form className="content-card report-form" onSubmit={submit}><div className="form-section-title"><span className="form-section-icon"><FilePlus2 size={18}/></span><div><h3>Informasi kejadian</h3><p>Isi detail yang Anda ketahui berdasarkan pengamatan.</p></div></div><Field label="Kategori dugaan pelanggaran" required><select value={category} onChange={e=>setCategory(e.target.value)}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></Field><Field label="Deskripsi kejadian" required hint="Minimal 20 karakter. Hindari asumsi atau tuduhan yang tidak dapat dijelaskan."><textarea rows="5" value={description} onChange={e=>setDescription(e.target.value)} required minLength={20} maxLength={3000} placeholder="Jelaskan apa yang terlihat, lokasi spesifik, arah kendaraan jika relevan, dan informasi faktual lainnya…"/><small className="char-count">{description.length}/3000</small></Field><AISpamChecker description={description} currentResult={aiResult} onResultChange={setAiResult}/><Field label="Lokasi kejadian" required hint="Tulis alamat, nama jalan, patokan, atau area kejadian."><div className="input-with-action"><MapPin size={17}/><input value={location} onChange={e=>setLocation(e.target.value)} required minLength={3} maxLength={300} placeholder="Contoh: Jalan Sam Ratulangi, dekat persimpangan…"/></div></Field><div className="coordinate-row"><Field label="Latitude"><input value={lat} onChange={e=>setLat(e.target.value)} inputMode="decimal" placeholder="Contoh: 1.4748"/></Field><Field label="Longitude"><input value={lng} onChange={e=>setLng(e.target.value)} inputMode="decimal" placeholder="Contoh: 124.8421"/></Field><button type="button" className="button button-secondary location-button" onClick={useLocation}><MapPin size={16}/> Gunakan GPS</button></div><Field label="Waktu kejadian" hint="Opsional. Isi jika waktu diketahui."><input type="datetime-local" value={incidentTime} max={localDateTimeNow()} onChange={e=>setIncidentTime(e.target.value)}/></Field><div className="field"><span>Foto pendukung <small className="optional">(opsional)</small></span><label className={`upload-zone ${preview?'has-preview':''}`}>{preview?<><img src={preview} alt="Pratinjau foto laporan"/><span className="upload-change"><Camera size={16}/> Ganti foto</span></>:<><span className="upload-icon"><ImagePlus size={22}/></span><b>Unggah foto kejadian</b><span>JPG, PNG atau WebP · Maksimal 5 MB</span><span className="upload-browse">Pilih foto</span></>}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseFile} hidden/></label>{file&&<div className="file-row"><FileImage size={16}/><span>{file.name}</span><button type="button" className="icon-button" onClick={()=>{setFile(null);setPreview('');}} aria-label="Hapus foto"><X size={16}/></button></div>}</div><div className="privacy-note"><ShieldCheck size={17}/><span>Foto dan detail laporan hanya dapat diakses sesuai kebijakan akses sistem. Hindari mengunggah gambar yang tidak relevan atau membahayakan privasi orang lain.</span></div>{error&&<div className="notice notice-error"><AlertCircle size={17}/>{error}</div>}{success&&<div className="notice notice-success"><CheckCircle2 size={17}/>{success}</div>}<div className="form-actions"><button type="button" className="button button-secondary" onClick={()=>navigate(-1)}>Batal</button><button type="submit" disabled={busy} className="button button-primary">{busy?'Mengirim…':'Kirim laporan'} <ArrowRight size={16}/></button></div></form><aside className="form-aside"><div className="aside-info-card"><div className="aside-icon blue"><ShieldCheck size={20}/></div><h3>Proses verifikasi</h3><p>Admin memeriksa kelengkapan laporan. Admin dapat menerima untuk ditindaklanjuti, meminta perbaikan, atau menolak dengan alasan.</p></div><div className="aside-info-card"><div className="aside-icon orange"><Info size={20}/></div><h3>Laporkan secara bertanggung jawab</h3><ul><li>Berikan informasi yang faktual.</li><li>Jangan mengambil foto sambil berkendara.</li><li>Jangan mengunggah data pribadi yang tidak diperlukan.</li><li>Jangan menganggap laporan sebagai bukti resmi.</li></ul></div></aside></div></>;
+  return <><PageTitle eyebrow="PELAPORAN MASYARAKAT" title="Buat laporan baru" subtitle="Sampaikan informasi kejadian secara jelas. Laporan akan ditinjau sebelum diteruskan."/><div className="form-layout"><form className="content-card report-form" onSubmit={submit}><div className="form-section-title"><span className="form-section-icon"><FilePlus2 size={18}/></span><div><h3>Informasi kejadian</h3><p>Isi detail yang Anda ketahui berdasarkan pengamatan.</p></div></div><Field label="Kategori dugaan pelanggaran" required><select value={category} onChange={e=>setCategory(e.target.value)}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></Field><Field label="Deskripsi kejadian" required hint="Minimal 20 karakter. Hindari asumsi atau tuduhan yang tidak dapat dijelaskan."><textarea rows="5" value={description} onChange={e=>setDescription(e.target.value)} required minLength={20} maxLength={3000} placeholder="Jelaskan apa yang terlihat, lokasi spesifik, arah kendaraan jika relevan, dan informasi faktual lainnya…"/><small className="char-count">{description.length}/3000</small></Field><Field label="Lokasi kejadian" required hint="Tulis alamat, nama jalan, patokan, atau area kejadian."><div className="input-with-action"><MapPin size={17}/><input value={location} onChange={e=>setLocation(e.target.value)} required minLength={3} maxLength={300} placeholder="Contoh: Jalan Sam Ratulangi, dekat persimpangan…"/></div></Field><div className="coordinate-row"><Field label="Latitude"><input value={lat} onChange={e=>setLat(e.target.value)} inputMode="decimal" placeholder="Contoh: 1.4748"/></Field><Field label="Longitude"><input value={lng} onChange={e=>setLng(e.target.value)} inputMode="decimal" placeholder="Contoh: 124.8421"/></Field><button type="button" className="button button-secondary location-button" onClick={useLocation}><MapPin size={16}/> Gunakan GPS</button></div><Field label="Waktu kejadian" hint="Opsional. Isi jika waktu diketahui."><input type="datetime-local" value={incidentTime} max={localDateTimeNow()} onChange={e=>setIncidentTime(e.target.value)}/></Field><div className="field"><span>Foto pendukung <small className="optional">(opsional)</small></span><label className={`upload-zone ${preview?'has-preview':''}`}>{preview?<><img src={preview} alt="Pratinjau foto laporan"/><span className="upload-change"><Camera size={16}/> Ganti foto</span></>:<><span className="upload-icon"><ImagePlus size={22}/></span><b>Unggah foto kejadian</b><span>JPG, PNG atau WebP · Maksimal 5 MB</span><span className="upload-browse">Pilih foto</span></>}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseFile} hidden/></label>{file&&<div className="file-row"><FileImage size={16}/><span>{file.name}</span><button type="button" className="icon-button" onClick={()=>{setFile(null);setPreview('');}} aria-label="Hapus foto"><X size={16}/></button></div>}</div><div className="privacy-note"><ShieldCheck size={17}/><span>Foto dan detail laporan hanya dapat diakses sesuai kebijakan akses sistem. Hindari mengunggah gambar yang tidak relevan atau membahayakan privasi orang lain.</span></div>{error&&<div className="notice notice-error"><AlertCircle size={17}/>{error}</div>}{success&&<div className="notice notice-success"><CheckCircle2 size={17}/>{success}</div>}<div className="form-actions"><button type="button" className="button button-secondary" onClick={()=>navigate(-1)}>Batal</button><button type="submit" disabled={busy} className="button button-primary">{busy?'Mengirim…':'Kirim laporan'} <ArrowRight size={16}/></button></div></form><aside className="form-aside"><div className="aside-info-card"><div className="aside-icon blue"><ShieldCheck size={20}/></div><h3>Proses verifikasi</h3><p>Admin memeriksa kelengkapan laporan. Admin dapat menerima untuk ditindaklanjuti, meminta perbaikan, atau menolak dengan alasan.</p></div><div className="aside-info-card"><div className="aside-icon orange"><Info size={20}/></div><h3>Laporkan secara bertanggung jawab</h3><ul><li>Berikan informasi yang faktual.</li><li>Jangan mengambil foto sambil berkendara.</li><li>Jangan mengunggah data pribadi yang tidak diperlukan.</li><li>Jangan menganggap laporan sebagai bukti resmi.</li></ul></div></aside></div></>;
 }
 
 function PageTitle({eyebrow,title,subtitle,action}) {return <div className="page-title-row"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div>;}
@@ -655,18 +580,6 @@ function EditReportModal({report, session, onClose, onSuccess}) {
   const [removeExistingPhoto, setRemoveExistingPhoto] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [aiResult, setAiResult] = useState(
-    report.spam_prediction ? {
-      prediction: report.spam_prediction,
-      spam_probability: report.spam_probability,
-      normal_probability: report.normal_probability,
-      model_version: report.spam_model_version,
-      is_spam: report.spam_prediction === 'SPAM',
-      recommendation: report.spam_prediction === 'SPAM'
-        ? 'Deskripsi ini sebelumnya terindikasi spam. Disarankan untuk memperbaiki deskripsi sebelum mengirim ulang.'
-        : 'Deskripsi terindikasi relevan dengan konteks pelaporan lalu lintas.'
-    } : null
-  );
 
   useEscape(onClose, !busy);
 
@@ -759,6 +672,12 @@ function EditReportModal({report, session, onClose, onSuccess}) {
         finalPhotoPath = null;
       }
 
+      // Deteksi AI otomatis secara silent di background
+      let autoAi = null;
+      try {
+        autoAi = await checkSpamWithAI(cleanDescription);
+      } catch (_) {}
+
       // 1. Coba lewat RPC user_resubmit_report
       const { error: rpcErr } = await supabase.rpc('user_resubmit_report', {
         p_report_id: report.id,
@@ -772,13 +691,13 @@ function EditReportModal({report, session, onClose, onSuccess}) {
       });
 
       if (!rpcErr) {
-        if (aiResult) {
+        if (autoAi) {
           try {
             await supabase.from('reports').update({
-              spam_prediction: aiResult.prediction,
-              spam_probability: aiResult.spam_probability,
-              normal_probability: aiResult.normal_probability,
-              spam_model_version: aiResult.model_version || '1.0.0',
+              spam_prediction: autoAi.prediction,
+              spam_probability: autoAi.spam_probability,
+              normal_probability: autoAi.normal_probability,
+              spam_model_version: autoAi.model_version || '1.0.0',
               spam_checked_at: new Date().toISOString()
             }).eq('id', report.id);
           } catch (_) {}
@@ -796,11 +715,11 @@ function EditReportModal({report, session, onClose, onSuccess}) {
           status: 'pending',
           updated_at: new Date().toISOString()
         };
-        if (aiResult) {
-          payload.spam_prediction = aiResult.prediction;
-          payload.spam_probability = aiResult.spam_probability;
-          payload.normal_probability = aiResult.normal_probability;
-          payload.spam_model_version = aiResult.model_version || '1.0.0';
+        if (autoAi) {
+          payload.spam_prediction = autoAi.prediction;
+          payload.spam_probability = autoAi.spam_probability;
+          payload.normal_probability = autoAi.normal_probability;
+          payload.spam_model_version = autoAi.model_version || '1.0.0';
           payload.spam_checked_at = new Date().toISOString();
         }
         let { error: directErr } = await supabase.from('reports').update(payload).eq('id', report.id);
@@ -865,7 +784,6 @@ function EditReportModal({report, session, onClose, onSuccess}) {
               />
               <small className="char-count">{description.length}/3000</small>
             </Field>
-            <AISpamChecker description={description} currentResult={aiResult} onResultChange={setAiResult}/>
             <Field label="Lokasi kejadian" required hint="Alamat, persimpangan, atau patokan lokasi kejadian.">
               <div className="input-with-action">
                 <MapPin size={17}/>
@@ -1007,6 +925,29 @@ function AdminPage({profile}) {
       });
 
       setReports(finalReports);
+
+      // Auto-scan laporan yang belum memiliki prediksi AI secara otomatis di latar belakang
+      const unscanned = (finalReports || []).filter(r => !r.spam_prediction && r.description);
+      if (unscanned.length > 0) {
+        (async () => {
+          for (const item of unscanned.slice(0, 10)) {
+            try {
+              const res = await checkSpamWithAI(item.description);
+              const patch = {
+                spam_prediction: res.prediction,
+                spam_probability: res.spam_probability,
+                normal_probability: res.normal_probability,
+                spam_model_version: res.model_version || '1.0.0',
+                spam_checked_at: new Date().toISOString()
+              };
+              setReports(prev => prev.map(r => r.id === item.id ? { ...r, ...patch } : r));
+              await supabase.from('reports').update(patch).eq('id', item.id);
+            } catch (_) {
+              break;
+            }
+          }
+        })();
+      }
     } catch(err) {
       setError(err.message || 'Gagal memuat daftar laporan.');
     } finally {
@@ -1033,19 +974,54 @@ function AdminPage({profile}) {
     setStatus(r.status);
     setNote(r.admin_note||'');
     setAdminSpamVerify(r.admin_spam_verification||'');
-    setAdminAiResult(r.spam_prediction ? {
-      prediction: r.spam_prediction,
-      spam_probability: r.spam_probability,
-      normal_probability: r.normal_probability,
-      model_version: r.spam_model_version,
-      checked_at: r.spam_checked_at,
-      is_spam: r.spam_prediction === 'SPAM',
-      recommendation: r.spam_prediction === 'SPAM'
-        ? 'Laporan terindikasi tidak relevan atau berisi konten spam.'
-        : 'Laporan terindikasi relevan dengan konteks lalu lintas.'
-    } : null);
     setMessage('');
     setError('');
+
+    if (r.spam_prediction) {
+      setAdminAiResult({
+        prediction: r.spam_prediction,
+        spam_probability: r.spam_probability,
+        normal_probability: r.normal_probability,
+        model_version: r.spam_model_version,
+        checked_at: r.spam_checked_at,
+        is_spam: r.spam_prediction === 'SPAM',
+        recommendation: r.spam_prediction === 'SPAM'
+          ? 'Laporan terindikasi tidak relevan atau berisi konten spam.'
+          : 'Laporan terindikasi relevan dengan konteks lalu lintas.'
+      });
+    } else {
+      // Otomatis scan langsung saat admin membuka detail laporan!
+      setAdminAiResult(null);
+      if (r.description) {
+        setAdminAiTesting(true);
+        checkSpamWithAI(r.description).then(async (res) => {
+          const scanned = {
+            prediction: res.prediction,
+            spam_probability: res.spam_probability,
+            normal_probability: res.normal_probability,
+            model_version: res.model_version || '1.0.0',
+            checked_at: new Date().toISOString(),
+            is_spam: res.prediction === 'SPAM',
+            recommendation: res.recommendation
+          };
+          setAdminAiResult(scanned);
+          setReports(prev => prev.map(item => item.id === r.id ? { ...item, ...scanned } : item));
+          try {
+            await supabase.from('reports').update({
+              spam_prediction: scanned.prediction,
+              spam_probability: scanned.spam_probability,
+              normal_probability: scanned.normal_probability,
+              spam_model_version: scanned.model_version,
+              spam_checked_at: scanned.checked_at
+            }).eq('id', r.id);
+          } catch (_) {}
+        }).catch(() => {
+          // Layanan ML belum aktif
+        }).finally(() => {
+          setAdminAiTesting(false);
+        });
+      }
+    }
   }
 
   async function runAdminAICheck() {
@@ -1169,7 +1145,7 @@ function AdminPage({profile}) {
         </div>
       )}
     </section>
-    {selected&&<div className="modal-backdrop" onClick={()=>setSelected(null)}><div className="modal-card admin-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">VERIFIKASI · {shortId(selected.id)}</span><h2>Periksa laporan</h2></div><button className="icon-button" onClick={()=>setSelected(null)}><X size={19}/></button></div><form onSubmit={saveReview}><div className="modal-body"><div className="report-byline"><div className="avatar">{(selected.reporterName||'P').slice(0,1).toUpperCase()}</div><div><b>{selected.reporterName||'Pengguna'}</b><small>ID Akun: {shortId(selected.user_id)} · {formatDate(selected.created_at)}</small></div><StatusBadge status={selected.status}/></div><DetailLine label="Kategori" value={selected.category}/><DetailLine label="Lokasi" value={selected.location}/><DetailLine label="Waktu kejadian" value={formatDate(selected.incident_time)}/><div className="detail-block"><b>Deskripsi pelapor</b><p>{selected.description}</p></div>{selected.latitude&&selected.longitude&&<a className="text-link" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${selected.latitude}&mlon=${selected.longitude}#map=17/${selected.latitude}/${selected.longitude}`}><MapPin size={15}/> Lihat koordinat di peta <ArrowRight size={14}/></a>}<AdminPhoto path={selected.photo_path}/><div className="admin-ai-panel"><div className="admin-ai-header"><div><b><Sparkles size={14} style={{display:'inline',verticalAlign:'-2px',marginRight:5}}/> Moderasi AI Spam Detection</b><small>Model Machine Learning Multinomial Naive Bayes</small></div><button type="button" disabled={adminAiTesting} onClick={runAdminAICheck} className="button button-secondary button-sm"><RefreshCw size={13} className={adminAiTesting ? 'spin' : ''}/>{adminAiTesting ? 'Menganalisis…' : 'Periksa Ulang dengan AI'}</button></div>{adminAiResult ? (<div className="admin-ai-grid"><div className="ai-stat-tile"><span>Hasil Prediksi</span><strong className={adminAiResult.prediction === 'SPAM' ? 'text-red' : 'text-green'}>{adminAiResult.prediction === 'SPAM' ? 'TERINDIKASI SPAM' : 'NORMAL'}</strong></div><div className="ai-stat-tile"><span>Probabilitas Spam</span><b>{(Number(adminAiResult.spam_probability || 0) * 100).toFixed(1)}%</b></div><div className="ai-stat-tile"><span>Probabilitas Normal</span><b>{(Number(adminAiResult.normal_probability || 0) * 100).toFixed(1)}%</b></div><div className="ai-stat-tile"><span>Waktu Pemeriksaan</span><b>{adminAiResult.checked_at ? formatDate(adminAiResult.checked_at) : 'Baru saja'}</b></div></div>) : (<div className="notice notice-info compact-notice" style={{marginBottom: 14}}><Info size={15}/> Laporan ini belum diperiksa AI secara otomatis. Klik &quot;Periksa Ulang dengan AI&quot; untuk menganalisis teks laporan ini.</div>)}<div className="admin-spam-verify-row"><span>Status Verifikasi Administrator:</span><div className="verify-options"><label className="radio-label"><input type="radio" name="admin_spam_verification" value="" checked={!adminSpamVerify} onChange={() => setAdminSpamVerify('')}/><span>Belum diverifikasi</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="verified_normal" checked={adminSpamVerify === 'verified_normal'} onChange={() => setAdminSpamVerify('verified_normal')}/><span className="text-green">Verifikasi: Normal</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="verified_spam" checked={adminSpamVerify === 'verified_spam'} onChange={() => setAdminSpamVerify('verified_spam')}/><span className="text-red">Verifikasi: Spam</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="dismissed" checked={adminSpamVerify === 'dismissed'} onChange={() => setAdminSpamVerify('dismissed')}/><span className="text-muted">Abaikan</span></label></div></div><div className="admin-ai-disclaimer"><Info size={13}/><span>Hasil AI hanya alat bantu pendukung moderasi. Administrator memiliki wewenang penuh dalam menentukan keabsahan laporan.</span></div></div><div className="review-divider"/><Field label="Keputusan / status" required><select value={status} onChange={e=>setStatus(e.target.value)} required>{Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></Field><Field label="Catatan verifikasi" hint="Wajib diisi jika laporan ditolak atau perlu perbaikan. Jelaskan alasan dengan sopan."><textarea rows="3" value={note} onChange={e=>setNote(e.target.value)} maxLength={2000} placeholder="Contoh: Mohon tambahkan patokan lokasi agar kejadian dapat diperiksa…"/></Field>{['rejected','revision'].includes(status)&&!note.trim()&&<div className="notice notice-info"><Info size={16}/> Status ini memerlukan catatan alasan.</div>}{error&&<div className="notice notice-error"><AlertCircle size={17}/>{error}</div>}{message&&<div className="notice notice-success"><CheckCircle2 size={17}/>{message}</div>}<div className="disclaimer compact-disclaimer"><Info size={16}/><p>Verifikasi aplikasi bukan penetapan kesalahan hukum. Teruskan informasi melalui prosedur resmi jika diperlukan.</p></div></div><div className="modal-footer"><button type="button" className="button button-secondary" onClick={()=>setSelected(null)}>Batal</button><button disabled={saving||(['rejected','revision'].includes(status)&&!note.trim())} className="button button-primary" type="submit">{saving?'Menyimpan…':'Simpan keputusan'} <Check size={16}/></button></div></form></div></div>}
+    {selected&&<div className="modal-backdrop" onClick={()=>setSelected(null)}><div className="modal-card admin-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">VERIFIKASI · {shortId(selected.id)}</span><h2>Periksa laporan</h2></div><button className="icon-button" onClick={()=>setSelected(null)}><X size={19}/></button></div><form onSubmit={saveReview}><div className="modal-body"><div className="report-byline"><div className="avatar">{(selected.reporterName||'P').slice(0,1).toUpperCase()}</div><div><b>{selected.reporterName||'Pengguna'}</b><small>ID Akun: {shortId(selected.user_id)} · {formatDate(selected.created_at)}</small></div><StatusBadge status={selected.status}/></div><DetailLine label="Kategori" value={selected.category}/><DetailLine label="Lokasi" value={selected.location}/><DetailLine label="Waktu kejadian" value={formatDate(selected.incident_time)}/><div className="detail-block"><b>Deskripsi pelapor</b><p>{selected.description}</p></div>{selected.latitude&&selected.longitude&&<a className="text-link" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${selected.latitude}&mlon=${selected.longitude}#map=17/${selected.latitude}/${selected.longitude}`}><MapPin size={15}/> Lihat koordinat di peta <ArrowRight size={14}/></a>}<AdminPhoto path={selected.photo_path}/><div className="admin-ai-panel"><div className="admin-ai-header"><div><b><Sparkles size={14} style={{display:'inline',verticalAlign:'-2px',marginRight:5}}/> Moderasi AI Spam Detection</b><small>Model Machine Learning Multinomial Naive Bayes (Otomatis)</small></div><button type="button" disabled={adminAiTesting} onClick={runAdminAICheck} className="button button-secondary button-sm"><RefreshCw size={13} className={adminAiTesting ? 'spin' : ''}/>{adminAiTesting ? 'Menganalisis…' : 'Pindai ulang AI'}</button></div>{adminAiTesting ? (<div className="notice notice-info compact-notice" style={{marginBottom: 14}}><RefreshCw size={14} className="spin" style={{display:'inline-block',marginRight:6,verticalAlign:'-2px'}}/><span>Sedang memindai dan menganalisis teks laporan dengan AI secara otomatis…</span></div>) : adminAiResult ? (<div className="admin-ai-grid"><div className="ai-stat-tile"><span>Hasil Prediksi</span><strong className={adminAiResult.prediction === 'SPAM' ? 'text-red' : 'text-green'}>{adminAiResult.prediction === 'SPAM' ? 'TERINDIKASI SPAM' : 'NORMAL'}</strong></div><div className="ai-stat-tile"><span>Probabilitas Spam</span><b>{(Number(adminAiResult.spam_probability || 0) * 100).toFixed(1)}%</b></div><div className="ai-stat-tile"><span>Probabilitas Normal</span><b>{(Number(adminAiResult.normal_probability || 0) * 100).toFixed(1)}%</b></div><div className="ai-stat-tile"><span>Waktu Pemeriksaan</span><b>{adminAiResult.checked_at ? formatDate(adminAiResult.checked_at) : 'Baru saja'}</b></div></div>) : (<div className="notice notice-info compact-notice" style={{marginBottom: 14}}><Info size={15}/> Layanan AI belum aktif atau sedang offline (port 8000).</div>)}<div className="admin-spam-verify-row"><span>Status Verifikasi Administrator:</span><div className="verify-options"><label className="radio-label"><input type="radio" name="admin_spam_verification" value="" checked={!adminSpamVerify} onChange={() => setAdminSpamVerify('')}/><span>Belum diverifikasi</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="verified_normal" checked={adminSpamVerify === 'verified_normal'} onChange={() => setAdminSpamVerify('verified_normal')}/><span className="text-green">Verifikasi: Normal</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="verified_spam" checked={adminSpamVerify === 'verified_spam'} onChange={() => setAdminSpamVerify('verified_spam')}/><span className="text-red">Verifikasi: Spam</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="dismissed" checked={adminSpamVerify === 'dismissed'} onChange={() => setAdminSpamVerify('dismissed')}/><span className="text-muted">Abaikan</span></label></div></div><div className="admin-ai-disclaimer"><Info size={13}/><span>Hasil AI hanya alat bantu pendukung moderasi. Administrator memiliki wewenang penuh dalam menentukan keabsahan laporan.</span></div></div><div className="review-divider"/><Field label="Keputusan / status" required><select value={status} onChange={e=>setStatus(e.target.value)} required>{Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></Field><Field label="Catatan verifikasi" hint="Wajib diisi jika laporan ditolak atau perlu perbaikan. Jelaskan alasan dengan sopan."><textarea rows="3" value={note} onChange={e=>setNote(e.target.value)} maxLength={2000} placeholder="Contoh: Mohon tambahkan patokan lokasi agar kejadian dapat diperiksa…"/></Field>{['rejected','revision'].includes(status)&&!note.trim()&&<div className="notice notice-info"><Info size={16}/> Status ini memerlukan catatan alasan.</div>}{error&&<div className="notice notice-error"><AlertCircle size={17}/>{error}</div>}{message&&<div className="notice notice-success"><CheckCircle2 size={17}/>{message}</div>}<div className="disclaimer compact-disclaimer"><Info size={16}/><p>Verifikasi aplikasi bukan penetapan kesalahan hukum. Teruskan informasi melalui prosedur resmi jika diperlukan.</p></div></div><div className="modal-footer"><button type="button" className="button button-secondary" onClick={()=>setSelected(null)}>Batal</button><button disabled={saving||(['rejected','revision'].includes(status)&&!note.trim())} className="button button-primary" type="submit">{saving?'Menyimpan…':'Simpan keputusan'} <Check size={16}/></button></div></form></div></div>}
   </>;
 }
 function AdminPhoto({path}) {const [url,setUrl]=useState('');const [photoError,setPhotoError]=useState('');useEffect(()=>{let active=true;setUrl('');setPhotoError('');if(path)supabase.storage.from('report-photos').createSignedUrl(path,60).then(({data,error})=>{if(!active)return;if(error||!data?.signedUrl)setPhotoError(`Foto tidak dapat dimuat${error?.message?`: ${error.message}`:'.'}`);else setUrl(data.signedUrl);});return()=>{active=false;};},[path]);if(photoError)return <div className="notice notice-error"><AlertCircle size={16}/>{photoError}</div>;return url?<div className="admin-photo-wrap"><b>Foto pendukung</b><a href={url} target="_blank" rel="noreferrer"><img className="detail-photo" src={url} alt="Foto pendukung laporan"/></a></div>:null;}
