@@ -268,3 +268,24 @@
   .gated-card p { font-size: 12px; }
 }
 
+/* Pelapor (Username) di Admin Dashboard */
+.reporter-cell{white-space:nowrap}
+.reporter-chip{display:flex;align-items:center;gap:9px}
+.reporter-avatar{width:28px;height:28px;border-radius:50%;background:#e0edff;color:#155eef;font-size:11px;font-weight:700;display:grid;place-items:center;flex-shrink:0}
+.reporter-chip b{display:block;font-size:11px;color:#1e293b;line-height:1.2}
+.reporter-id{display:block;font-size:9px;color:#94a3b8;margin-top:2px}
+
+/* List Item & Quick Edit Button */
+.report-list-item-wrap{position:relative;display:flex;align-items:center}
+.report-list-item-wrap .report-list-item{flex:1}
+.quick-edit-btn{margin-left:10px;flex-shrink:0;white-space:nowrap}
+.revision-pill{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;color:#c2410c;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:2px 7px;margin-top:5px;align-self:flex-start}
+
+/* Edit Report Modal */
+.edit-modal{max-width:620px}
+.edit-note-banner{background:#fff8eb;border:1px solid #f6d899;border-radius:10px;padding:12px 14px;margin-bottom:18px;display:flex;gap:10px;color:#925d07}
+.edit-note-banner b{display:block;font-size:11px;margin-bottom:3px;color:#784d05}
+.edit-note-banner p{font-size:11px;line-height:1.55;margin:0}
+.preview-action-row{position:absolute;bottom:10px;right:10px;display:flex;gap:8px}
+
+

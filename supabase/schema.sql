@@ -412,6 +412,29 @@ WITH CHECK (
 
 
 -- ------------------------------------------------------------
+-- REPORTS UPDATE POLICY
+-- Pengguna dapat memperbarui laporan miliknya sendiri yang
+-- berstatus pending atau revision dan mengembalikannya ke pending.
+-- ------------------------------------------------------------
+
+DROP POLICY IF EXISTS "reports_update_own"
+    ON public.reports;
+
+CREATE POLICY "reports_update_own"
+ON public.reports
+FOR UPDATE
+TO authenticated
+USING (
+    user_id = (SELECT auth.uid())
+    AND status IN ('pending', 'revision')
+)
+WITH CHECK (
+    user_id = (SELECT auth.uid())
+    AND status = 'pending'
+);
+
+
+-- ------------------------------------------------------------
 -- REPORT STATUS HISTORY POLICIES
 -- Pengguna dapat membaca riwayat laporan miliknya.
 -- Admin dapat membaca semua riwayat.
@@ -441,9 +464,12 @@ USING (
 -- Batasi perubahan langsung pada tabel laporan.
 -- ============================================================
 
-REVOKE UPDATE, DELETE ON public.reports FROM anon, authenticated;
+REVOKE DELETE ON public.reports FROM anon, authenticated;
+REVOKE UPDATE ON public.reports FROM anon;
 
 GRANT SELECT, INSERT ON public.reports TO authenticated;
+GRANT UPDATE (category, description, location, latitude, longitude, incident_time, photo_path, status, updated_at)
+    ON public.reports TO authenticated;
 GRANT SELECT ON public.profiles TO authenticated;
 GRANT SELECT ON public.report_status_history TO authenticated;
 

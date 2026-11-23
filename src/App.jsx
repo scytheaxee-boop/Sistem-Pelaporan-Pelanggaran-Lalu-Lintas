@@ -4,7 +4,7 @@ import {
   AlertCircle, ArrowDownToLine, ArrowLeft, ArrowRight, Bell, Camera, Check,
   CheckCircle2, ChevronDown, CircleHelp, Clock3, FileCheck2, FileImage, FilePlus2,
   Filter, Flag, Gauge, ImagePlus, Info, LayoutDashboard, Lock, LogIn, LogOut, MapPin,
-  Menu, MessageSquareText, Plus, RefreshCw, Search, ShieldCheck, TrafficCone,
+  Menu, MessageSquareText, Pencil, Plus, RefreshCw, Search, Send, ShieldCheck, TrafficCone,
   UserPlus, UserRound, Users, X
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
@@ -413,29 +413,506 @@ function CreateReportPage({session}) {
 function PageTitle({eyebrow,title,subtitle,action}) {return <div className="page-title-row"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div>;}
 
 function MyReportsPage({session}) {
-  const [reports,setReports]=useState([]);const [loading,setLoading]=useState(true);const [filter,setFilter]=useState('all');const [search,setSearch]=useState('');const [selected,setSelected]=useState(null);const [loadError,setLoadError]=useState('');
-  const refresh=useCallback(async()=>{setLoading(true);setLoadError('');const {data,error}=await supabase.from('reports').select('id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude').eq('user_id',session.user.id).order('created_at',{ascending:false});if(error){setLoadError(`Laporan gagal dimuat: ${error.message}`);setReports([]);}else setReports(data||[]);setLoading(false);},[session.user.id]);
+  const [reports,setReports]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [filter,setFilter]=useState('all');
+  const [search,setSearch]=useState('');
+  const [selected,setSelected]=useState(null);
+  const [editing,setEditing]=useState(null);
+  const [loadError,setLoadError]=useState('');
+  const [actionSuccess,setActionSuccess]=useState('');
+
+  const refresh=useCallback(async()=>{
+    setLoading(true);
+    setLoadError('');
+    const {data,error}=await supabase.from('reports').select('id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude').eq('user_id',session.user.id).order('created_at',{ascending:false});
+    if(error){
+      setLoadError(`Laporan gagal dimuat: ${error.message}`);
+      setReports([]);
+    } else {
+      setReports(data||[]);
+    }
+    setLoading(false);
+  },[session.user.id]);
+
   useEffect(()=>{refresh();},[refresh]);
+
   const visible=useMemo(()=>reports.filter(r=>(filter==='all'||r.status===filter)&&`${r.category} ${r.location} ${shortId(r.id)}`.toLowerCase().includes(search.toLowerCase())),[reports,filter,search]);
-  return <><PageTitle eyebrow="AKTIVITAS ANDA" title="Laporan saya" subtitle="Pantau status, catatan verifikasi, dan perkembangan laporan Anda." action={<Link to="/buat-laporan" className="button button-primary"><Plus size={17}/> Buat laporan</Link>}/><div className="filter-toolbar"><div className="search-box"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari ID, kategori, atau lokasi…"/></div><div className="filter-select"><Filter size={16}/><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">Semua status</option>{Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select><ChevronDown size={15}/></div></div><section className="content-card table-card"><div className="card-heading"><div><h3>Daftar laporan</h3><p>{visible.length} laporan ditampilkan</p></div></div>{loadError&&<div className="notice notice-error"><AlertCircle size={17}/>{loadError}</div>}{loading?<LoadingRows/>:loadError?null:visible.length===0?<EmptyState title="Laporan tidak ditemukan" text="Coba ubah filter atau kirim laporan baru."/>:<div className="report-list">{visible.map(r=><ReportListItem key={r.id} report={r} onClick={()=>setSelected(r)}/>)}</div>}</section>{selected&&<ReportDetail report={selected} onClose={()=>setSelected(null)}/>}</>;
+
+  return <>
+    <PageTitle eyebrow="AKTIVITAS ANDA" title="Laporan saya" subtitle="Pantau status, catatan verifikasi, dan perbaiki laporan jika diminta." action={<Link to="/buat-laporan" className="button button-primary"><Plus size={17}/> Buat laporan</Link>}/>
+    {actionSuccess && <div className="notice notice-success"><CheckCircle2 size={17}/>{actionSuccess}</div>}
+    <div className="filter-toolbar">
+      <div className="search-box"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari ID, kategori, atau lokasi…"/></div>
+      <div className="filter-select"><Filter size={16}/><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">Semua status</option>{Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select><ChevronDown size={15}/></div>
+    </div>
+    <section className="content-card table-card">
+      <div className="card-heading"><div><h3>Daftar laporan</h3><p>{visible.length} laporan ditampilkan</p></div></div>
+      {loadError&&<div className="notice notice-error"><AlertCircle size={17}/>{loadError}</div>}
+      {loading?<LoadingRows/>:loadError?null:visible.length===0?<EmptyState title="Laporan tidak ditemukan" text="Coba ubah filter atau kirim laporan baru."/>:<div className="report-list">{visible.map(r=><ReportListItem key={r.id} report={r} onClick={()=>setSelected(r)} onEdit={()=>setEditing(r)}/>)}</div>}
+    </section>
+    {selected&&<ReportDetail report={selected} onClose={()=>setSelected(null)} onEdit={(r)=>{setSelected(null);setEditing(r);}}/>}
+    {editing&&<EditReportModal report={editing} session={session} onClose={()=>setEditing(null)} onSuccess={(msg)=>{setActionSuccess(msg);refresh();}}/>}
+  </>;
 }
 
-function ReportListItem({report,onClick}) {const status=STATUS[report.status]||STATUS.pending;return <button className="report-list-item" onClick={onClick}><div className="report-type-icon"><Flag size={19}/></div><div className="report-list-main"><div className="report-list-title"><b>{report.category}</b><span className={`status-badge ${status.className}`}><span/>{status.label}</span></div><div className="report-list-meta"><span>{shortId(report.id)}</span><span><MapPin size={13}/>{report.location}</span><span><Clock3 size={13}/>{formatDate(report.created_at)}</span></div></div><ArrowRight size={17} className="list-arrow"/></button>}
+function ReportListItem({report,onClick,onEdit}) {
+  const status=STATUS[report.status]||STATUS.pending;
+  const canEdit=['pending','revision'].includes(report.status);
+  return (
+    <div className="report-list-item-wrap">
+      <button className="report-list-item" onClick={onClick}>
+        <div className="report-type-icon"><Flag size={19}/></div>
+        <div className="report-list-main">
+          <div className="report-list-title">
+            <b>{report.category}</b>
+            <span className={`status-badge ${status.className}`}><span/>{status.label}</span>
+          </div>
+          <div className="report-list-meta">
+            <span>{shortId(report.id)}</span>
+            <span><MapPin size={13}/>{report.location}</span>
+            <span><Clock3 size={13}/>{formatDate(report.created_at)}</span>
+          </div>
+          {report.status==='revision'&&report.admin_note&&<span className="revision-pill"><Pencil size={11}/> Perlu perbaikan dari admin</span>}
+        </div>
+        <ArrowRight size={17} className="list-arrow"/>
+      </button>
+      {canEdit&&(
+        <button className="button button-secondary button-sm quick-edit-btn" title="Edit & Kirim Ulang" onClick={(e)=>{e.stopPropagation();onEdit();}}>
+          <Pencil size={13}/> Edit
+        </button>
+      )}
+    </div>
+  );
+}
 
-function ReportDetail({report,onClose}) {const [photo,setPhoto]=useState('');const [photoError,setPhotoError]=useState('');const status=STATUS[report.status]||STATUS.pending;useEscape(onClose);useEffect(()=>{let active=true;setPhoto('');setPhotoError('');if(report.photo_path)supabase.storage.from('report-photos').createSignedUrl(report.photo_path,60).then(({data,error})=>{if(!active)return;if(error||!data?.signedUrl)setPhotoError(`Foto tidak dapat dimuat${error?.message?`: ${error.message}`:'.'}`);else setPhoto(data.signedUrl);});return()=>{active=false;};},[report.photo_path]);return <div className="modal-backdrop" onClick={onClose}><div className="modal-card" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">{shortId(report.id)}</span><h2>Detail laporan</h2></div><button className="icon-button" onClick={onClose}><X size={19}/></button></div><div className="modal-body"><span className={`status-badge ${status.className}`}><span/>{status.label}</span><DetailLine label="Kategori" value={report.category}/><DetailLine label="Lokasi" value={report.location}/><DetailLine label="Waktu laporan" value={formatDate(report.created_at)}/><DetailLine label="Waktu kejadian" value={formatDate(report.incident_time)}/><div className="detail-block"><b>Deskripsi</b><p>{report.description}</p></div>{report.latitude&&report.longitude&&<a className="text-link" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${report.latitude}&mlon=${report.longitude}#map=17/${report.latitude}/${report.longitude}`}><MapPin size={15}/> Buka lokasi di OpenStreetMap <ArrowRight size={14}/></a>}{photo&&<img className="detail-photo" src={photo} alt="Foto pendukung laporan"/>}{photoError&&<div className="notice notice-error"><AlertCircle size={16}/>{photoError}</div>}{report.admin_note&&<div className="admin-note"><b><MessageSquareText size={15}/> Catatan admin</b><p>{report.admin_note}</p></div>}<p className="small-muted">Status merupakan informasi proses administrasi dan tidak otomatis membuktikan pelanggaran.</p></div><div className="modal-footer"><button className="button button-secondary" onClick={onClose}>Tutup</button></div></div></div>;}
+function ReportDetail({report,onClose,onEdit}) {
+  const [photo,setPhoto]=useState('');
+  const [photoError,setPhotoError]=useState('');
+  const status=STATUS[report.status]||STATUS.pending;
+  const canEdit=['pending','revision'].includes(report.status);
+  useEscape(onClose);
+
+  useEffect(()=>{
+    let active=true;setPhoto('');setPhotoError('');
+    if(report.photo_path)supabase.storage.from('report-photos').createSignedUrl(report.photo_path,60).then(({data,error})=>{
+      if(!active)return;
+      if(error||!data?.signedUrl)setPhotoError(`Foto tidak dapat dimuat${error?.message?`: ${error.message}`:'.'}`);
+      else setPhoto(data.signedUrl);
+    });
+    return()=>{active=false;};
+  },[report.photo_path]);
+
+  return <div className="modal-backdrop" onClick={onClose}><div className="modal-card" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">{shortId(report.id)}</span><h2>Detail laporan</h2></div><button className="icon-button" onClick={onClose}><X size={19}/></button></div><div className="modal-body"><span className={`status-badge ${status.className}`}><span/>{status.label}</span><DetailLine label="Kategori" value={report.category}/><DetailLine label="Lokasi" value={report.location}/><DetailLine label="Waktu laporan" value={formatDate(report.created_at)}/><DetailLine label="Waktu kejadian" value={formatDate(report.incident_time)}/><div className="detail-block"><b>Deskripsi</b><p>{report.description}</p></div>{report.latitude&&report.longitude&&<a className="text-link" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${report.latitude}&mlon=${report.longitude}#map=17/${report.latitude}/${report.longitude}`}><MapPin size={15}/> Buka lokasi di OpenStreetMap <ArrowRight size={14}/></a>}{photo&&<img className="detail-photo" src={photo} alt="Foto pendukung laporan"/>}{photoError&&<div className="notice notice-error"><AlertCircle size={16}/>{photoError}</div>}{report.admin_note&&<div className="admin-note"><b><MessageSquareText size={15}/> Catatan admin</b><p>{report.admin_note}</p></div>}<p className="small-muted">Status merupakan informasi proses administrasi dan tidak otomatis membuktikan pelanggaran.</p></div><div className="modal-footer"><button className="button button-secondary" onClick={onClose}>Tutup</button>{canEdit&&<button className="button button-primary" onClick={()=>{onEdit(report);}}><Pencil size={15}/> Edit & Kirim Ulang</button>}</div></div></div>;
+}
+
+function EditReportModal({report, session, onClose, onSuccess}) {
+  const [category, setCategory] = useState(report.category || CATEGORIES[0]);
+  const [description, setDescription] = useState(report.description || '');
+  const [location, setLocation] = useState(report.location || '');
+  const [lat, setLat] = useState(report.latitude != null ? String(report.latitude) : '');
+  const [lng, setLng] = useState(report.longitude != null ? String(report.longitude) : '');
+  const [incidentTime, setIncidentTime] = useState(
+    report.incident_time ? new Date(report.incident_time).toISOString().slice(0, 16) : ''
+  );
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState('');
+  const [existingPhoto, setExistingPhoto] = useState('');
+  const [removeExistingPhoto, setRemoveExistingPhoto] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEscape(onClose, !busy);
+
+  useEffect(() => {
+    let active = true;
+    if (report.photo_path) {
+      supabase.storage.from('report-photos').createSignedUrl(report.photo_path, 120).then(({data}) => {
+        if (active && data?.signedUrl) setExistingPhoto(data.signedUrl);
+      });
+    }
+    return () => {
+      active = false;
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [report.photo_path, preview]);
+
+  function chooseFile(e) {
+    const next = e.target.files?.[0];
+    if (!next) return;
+    setError('');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(next.type)) {
+      setError('Gunakan file JPG, PNG, atau WebP.');
+      e.target.value = '';
+      return;
+    }
+    if (next.size > 5 * 1024 * 1024) {
+      setError('Ukuran foto maksimal 5 MB.');
+      e.target.value = '';
+      return;
+    }
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(next);
+    setPreview(URL.createObjectURL(next));
+    setRemoveExistingPhoto(false);
+  }
+
+  function useLocation() {
+    if (!navigator.geolocation) {
+      setError('Browser tidak mendukung geolokasi.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLat(String(pos.coords.latitude));
+        setLng(String(pos.coords.longitude));
+        if (!location) setLocation('Koordinat GPS pengguna');
+      },
+      () => setError('Lokasi tidak dapat diakses. Izinkan akses lokasi atau isi alamat secara manual.'),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    let uploadedPath = null;
+    try {
+      const cleanLocation = location.trim();
+      const cleanDescription = description.trim();
+      if (!cleanLocation) throw new Error('Lokasi kejadian wajib diisi.');
+      if (cleanLocation.length < 3) throw new Error('Lokasi kejadian minimal 3 karakter.');
+      if (cleanDescription.length < 20) throw new Error('Deskripsi minimal 20 karakter agar laporan dapat diperiksa.');
+      if (cleanDescription.split(/\s+/).filter(w => /\p{L}/u.test(w)).length < 3) {
+        throw new Error('Deskripsi minimal terdiri dari 3 kata yang menjelaskan kejadian.');
+      }
+      const latNum = parseCoordinate(lat);
+      const lngNum = parseCoordinate(lng);
+      if ((latNum === null) !== (lngNum === null)) throw new Error('Koordinat harus memiliki latitude dan longitude.');
+      if (Number.isNaN(latNum) || Number.isNaN(lngNum)) {
+        throw new Error('Latitude dan longitude harus berupa angka, contoh: 1.4748 dan 124.8421.');
+      }
+      if (latNum !== null && (latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180)) {
+        throw new Error('Koordinat tidak valid. Latitude -90 s.d. 90, longitude -180 s.d. 180.');
+      }
+      if (incidentTime) {
+        const t = new Date(incidentTime);
+        if (Number.isNaN(t.getTime())) throw new Error('Waktu kejadian tidak valid.');
+        if (t.getTime() > Date.now()) throw new Error('Waktu kejadian tidak boleh di masa depan.');
+      }
+
+      let finalPhotoPath = report.photo_path;
+      if (file) {
+        const ext = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+        uploadedPath = `${session.user.id}/${crypto.randomUUID()}.${ext}`;
+        const { error: uploadError } = await supabase.storage.from('report-photos').upload(uploadedPath, file, { contentType: file.type, upsert: false });
+        if (uploadError) throw uploadError;
+        finalPhotoPath = uploadedPath;
+      } else if (removeExistingPhoto) {
+        finalPhotoPath = null;
+      }
+
+      // 1. Coba lewat RPC user_resubmit_report
+      const { error: rpcErr } = await supabase.rpc('user_resubmit_report', {
+        p_report_id: report.id,
+        p_category: category,
+        p_description: cleanDescription,
+        p_location: cleanLocation,
+        p_latitude: latNum,
+        p_longitude: lngNum,
+        p_incident_time: incidentTime ? new Date(incidentTime).toISOString() : null,
+        p_photo_path: finalPhotoPath
+      });
+
+      if (rpcErr) {
+        // 2. Fallback direct update jika RPC belum dijalankan di database
+        const payload = {
+          category,
+          description: cleanDescription,
+          location: cleanLocation,
+          latitude: latNum,
+          longitude: lngNum,
+          incident_time: incidentTime ? new Date(incidentTime).toISOString() : null,
+          photo_path: finalPhotoPath,
+          status: 'pending',
+          updated_at: new Date().toISOString()
+        };
+        const { error: directErr } = await supabase.from('reports').update(payload).eq('id', report.id);
+        if (directErr) throw directErr;
+      }
+
+      onSuccess(`Laporan ${shortId(report.id)} berhasil diperbarui dan dikirim ulang ke admin.`);
+      onClose();
+    } catch (err) {
+      if (uploadedPath) await supabase.storage.from('report-photos').remove([uploadedPath]);
+      setError(err.message || 'Gagal mengirim ulang laporan.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={() => !busy && onClose()}>
+      <div className="modal-card edit-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <span className="eyebrow">{shortId(report.id)} · PERBAIKAN</span>
+            <h2>Edit & Kirim Ulang Laporan</h2>
+          </div>
+          <button className="icon-button" disabled={busy} onClick={onClose}><X size={19}/></button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="modal-body">
+            {report.admin_note && (
+              <div className="edit-note-banner">
+                <MessageSquareText size={18} style={{flexShrink:0, marginTop:2}}/>
+                <div>
+                  <b>Catatan dari Admin:</b>
+                  <p>{report.admin_note}</p>
+                </div>
+              </div>
+            )}
+            <Field label="Kategori dugaan pelanggaran" required>
+              <select value={category} onChange={e => setCategory(e.target.value)}>
+                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field label="Deskripsi kejadian" required hint="Minimal 20 karakter dan minimal 3 kata.">
+              <textarea
+                rows="4"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                required
+                minLength={20}
+                maxLength={3000}
+                placeholder="Perbarui penjelasan kejadian secara jelas dan faktual…"
+              />
+              <small className="char-count">{description.length}/3000</small>
+            </Field>
+            <Field label="Lokasi kejadian" required hint="Alamat, persimpangan, atau patokan lokasi kejadian.">
+              <div className="input-with-action">
+                <MapPin size={17}/>
+                <input
+                  value={location}
+                  onChange={e => setLocation(e.target.value)}
+                  required
+                  minLength={3}
+                  maxLength={300}
+                  placeholder="Contoh: Jl. Sam Ratulangi dekat simpang…"
+                />
+              </div>
+            </Field>
+            <div className="coordinate-row">
+              <Field label="Latitude"><input value={lat} onChange={e => setLat(e.target.value)} inputMode="decimal" placeholder="Contoh: 1.4748"/></Field>
+              <Field label="Longitude"><input value={lng} onChange={e => setLng(e.target.value)} inputMode="decimal" placeholder="Contoh: 124.8421"/></Field>
+              <button type="button" className="button button-secondary location-button" onClick={useLocation}><MapPin size={16}/> GPS</button>
+            </div>
+            <Field label="Waktu kejadian" hint="Opsional.">
+              <input type="datetime-local" value={incidentTime} max={localDateTimeNow()} onChange={e => setIncidentTime(e.target.value)}/>
+            </Field>
+            <div className="field">
+              <span>Foto pendukung <small className="optional">(opsional)</small></span>
+              {(preview || (existingPhoto && !removeExistingPhoto)) ? (
+                <div className="upload-zone has-preview">
+                  <img src={preview || existingPhoto} alt="Pratinjau foto laporan"/>
+                  <div className="preview-action-row">
+                    <label className="button button-secondary button-sm">
+                      <Camera size={15}/> Ganti foto
+                      <input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseFile} hidden/>
+                    </label>
+                    <button
+                      type="button"
+                      className="button button-secondary button-sm"
+                      onClick={() => {
+                        setFile(null);
+                        setPreview('');
+                        setRemoveExistingPhoto(true);
+                      }}
+                    >
+                      <X size={15}/> Hapus foto
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className="upload-zone">
+                  <span className="upload-icon"><ImagePlus size={22}/></span>
+                  <b>Unggah foto kejadian</b>
+                  <span>JPG, PNG atau WebP · Maksimal 5 MB</span>
+                  <span className="upload-browse">Pilih foto</span>
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseFile} hidden/>
+                </label>
+              )}
+            </div>
+            {error && <div className="notice notice-error"><AlertCircle size={17}/>{error}</div>}
+          </div>
+          <div className="modal-footer">
+            <button type="button" disabled={busy} className="button button-secondary" onClick={onClose}>Batal</button>
+            <button type="submit" disabled={busy} className="button button-primary">
+              {busy ? 'Mengirim ulang…' : 'Kirim Ulang Laporan'} <Send size={15}/>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function DetailLine({label,value}) {return <div className="detail-line"><span>{label}</span><b>{value||'—'}</b></div>;}
 
 function AdminPage({profile}) {
-  const [reports,setReports]=useState([]);const [loading,setLoading]=useState(true);const [filter,setFilter]=useState('all');const [search,setSearch]=useState('');const [selected,setSelected]=useState(null);const [status,setStatus]=useState('reviewing');const [note,setNote]=useState('');const [saving,setSaving]=useState(false);const [message,setMessage]=useState('');const [error,setError]=useState('');
-  const refresh=useCallback(async()=>{setLoading(true);const {data,error:err}=await supabase.from('reports').select('id,user_id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,profiles(full_name)').order('created_at',{ascending:false}).limit(500);if(err)setError(err.message);else setReports(data||[]);setLoading(false);},[]);
+  const [reports,setReports]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [filter,setFilter]=useState('all');
+  const [search,setSearch]=useState('');
+  const [selected,setSelected]=useState(null);
+  const [status,setStatus]=useState('reviewing');
+  const [note,setNote]=useState('');
+  const [saving,setSaving]=useState(false);
+  const [message,setMessage]=useState('');
+  const [error,setError]=useState('');
+
+  const refresh=useCallback(async()=>{
+    setLoading(true);
+    setError('');
+    try {
+      // 1. Ambil laporan beserta relasi profiles
+      let {data:repData, error:err} = await supabase
+        .from('reports')
+        .select('id,user_id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,profiles!user_id(full_name)')
+        .order('created_at',{ascending:false})
+        .limit(500);
+
+      if (err) {
+        const res = await supabase
+          .from('reports')
+          .select('id,user_id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,profiles(full_name)')
+          .order('created_at',{ascending:false})
+          .limit(500);
+        if (res.error) throw res.error;
+        repData = res.data;
+      }
+
+      // 2. Query tabel profiles langsung untuk menjamin nama/username pelapor selalu terbaca oleh admin
+      const {data:profs} = await supabase.from('profiles').select('id, full_name');
+      const profMap = {};
+      if (profs) {
+        for (const p of profs) {
+          if (p.full_name) profMap[p.id] = p.full_name;
+        }
+      }
+
+      // 3. Pasangkan nama pelapor secara akurat
+      const finalReports = (repData || []).map(r => {
+        const joined = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
+        const reporterName = profMap[r.user_id] || joined?.full_name || 'Pengguna';
+        return {
+          ...r,
+          reporterName
+        };
+      });
+
+      setReports(finalReports);
+    } catch(err) {
+      setError(err.message || 'Gagal memuat daftar laporan.');
+    } finally {
+      setLoading(false);
+    }
+  },[]);
+
   useEffect(()=>{refresh();},[refresh]);
-  const counts=useMemo(()=>({total:reports.length,pending:reports.filter(r=>r.status==='pending').length,reviewing:reports.filter(r=>r.status==='reviewing').length,action:reports.filter(r=>['forwarded','in_progress'].includes(r.status)).length}),[reports]);
-  const visible=useMemo(()=>reports.filter(r=>(filter==='all'||r.status===filter)&&`${r.category} ${r.location} ${shortId(r.id)} ${r.profiles?.full_name||''}`.toLowerCase().includes(search.toLowerCase())),[reports,filter,search]);
+
+  const counts=useMemo(()=>({
+    total:reports.length,
+    pending:reports.filter(r=>r.status==='pending').length,
+    reviewing:reports.filter(r=>r.status==='reviewing').length,
+    action:reports.filter(r=>['forwarded','in_progress'].includes(r.status)).length
+  }),[reports]);
+
+  const visible=useMemo(()=>reports.filter(r=>(filter==='all'||r.status===filter)&&`${r.category} ${r.location} ${shortId(r.id)} ${r.reporterName||''}`.toLowerCase().includes(search.toLowerCase())),[reports,filter,search]);
+
   const closeReview=useCallback(()=>{if(!saving)setSelected(null);},[saving]);
   useEscape(closeReview,!!selected);
+
   function openReport(r){setSelected(r);setStatus(r.status);setNote(r.admin_note||'');setMessage('');setError('');}
-  async function saveReview(e){e.preventDefault();if(!selected)return;setSaving(true);setMessage('');setError('');try{const {error:err}=await supabase.rpc('admin_update_report_status',{p_report_id:selected.id,p_status:status,p_admin_note:note.trim()||null});if(err)throw err;setMessage('Status laporan berhasil diperbarui.');await refresh();setSelected(null);}catch(err){setError(err.message||'Gagal memperbarui status.');}finally{setSaving(false);}}
-  return <><PageTitle eyebrow="PUSAT KENDALI" title="Dashboard admin" subtitle="Verifikasi laporan masuk, catat keputusan, dan perbarui tindak lanjut."/><div className="admin-stats"><StatCard icon={<FileCheck2 size={19}/>} label="Total laporan" value={counts.total} tone="blue" foot="Semua laporan"/><StatCard icon={<Clock3 size={19}/>} label="Menunggu verifikasi" value={counts.pending} tone="orange" foot="Perlu diperiksa"/><StatCard icon={<ShieldCheck size={19}/>} label="Sedang diverifikasi" value={counts.reviewing} tone="purple" foot="Dalam pemeriksaan"/><StatCard icon={<ArrowDownToLine size={19}/>} label="Diteruskan / tindak lanjut" value={counts.action} tone="green" foot="Memerlukan pemantauan"/></div><section className="content-card table-card"><div className="card-heading"><div><h3>Manajemen laporan</h3><p>Pilih laporan untuk memeriksa detail dan menentukan status.</p></div><button className="button button-secondary button-sm" onClick={refresh}><RefreshCw size={15}/> Segarkan</button></div><div className="filter-toolbar admin-filter"><div className="search-box"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari ID, pelapor, kategori, lokasi…"/></div><div className="filter-select"><Filter size={16}/><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">Semua status</option>{Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select><ChevronDown size={15}/></div></div>{error&&!selected&&<div className="notice notice-error"><AlertCircle size={17}/>{error}</div>}{message&&!selected&&<div className="notice notice-success"><CheckCircle2 size={17}/>{message}</div>}{loading?<LoadingRows/>:visible.length===0?<EmptyState title="Tidak ada laporan" text="Laporan yang sesuai pencarian atau filter akan muncul di sini."/>:<div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>ID / Tanggal</th><th>Pelapor</th><th>Kategori</th><th>Lokasi</th><th>Status</th><th></th></tr></thead><tbody>{visible.map(r=><tr key={r.id}><td><b>{shortId(r.id)}</b><small>{formatDate(r.created_at)}</small></td><td>{r.profiles?.full_name||'Pengguna'}</td><td>{r.category}</td><td className="location-cell">{r.location}</td><td><StatusBadge status={r.status}/></td><td><button className="button button-secondary button-sm" onClick={()=>openReport(r)}>Periksa <ArrowRight size={14}/></button></td></tr>)}</tbody></table></div>}</section>{selected&&<div className="modal-backdrop" onClick={()=>setSelected(null)}><div className="modal-card admin-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">VERIFIKASI · {shortId(selected.id)}</span><h2>Periksa laporan</h2></div><button className="icon-button" onClick={()=>setSelected(null)}><X size={19}/></button></div><form onSubmit={saveReview}><div className="modal-body"><div className="report-byline"><div className="avatar">{(selected.profiles?.full_name||'P').slice(0,1).toUpperCase()}</div><div><b>{selected.profiles?.full_name||'Pengguna'}</b><small>{formatDate(selected.created_at)}</small></div><StatusBadge status={selected.status}/></div><DetailLine label="Kategori" value={selected.category}/><DetailLine label="Lokasi" value={selected.location}/><DetailLine label="Waktu kejadian" value={formatDate(selected.incident_time)}/><div className="detail-block"><b>Deskripsi pelapor</b><p>{selected.description}</p></div>{selected.latitude&&selected.longitude&&<a className="text-link" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${selected.latitude}&mlon=${selected.longitude}#map=17/${selected.latitude}/${selected.longitude}`}><MapPin size={15}/> Lihat koordinat di peta <ArrowRight size={14}/></a>}<AdminPhoto path={selected.photo_path}/><div className="review-divider"/><Field label="Keputusan / status" required><select value={status} onChange={e=>setStatus(e.target.value)} required>{Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></Field><Field label="Catatan verifikasi" hint="Wajib diisi jika laporan ditolak atau perlu perbaikan. Jelaskan alasan dengan sopan."><textarea rows="3" value={note} onChange={e=>setNote(e.target.value)} maxLength={2000} placeholder="Contoh: Mohon tambahkan patokan lokasi agar kejadian dapat diperiksa…"/></Field>{['rejected','revision'].includes(status)&&!note.trim()&&<div className="notice notice-info"><Info size={16}/> Status ini memerlukan catatan alasan.</div>}{error&&<div className="notice notice-error"><AlertCircle size={17}/>{error}</div>}{message&&<div className="notice notice-success"><CheckCircle2 size={17}/>{message}</div>}<div className="disclaimer compact-disclaimer"><Info size={16}/><p>Verifikasi aplikasi bukan penetapan kesalahan hukum. Teruskan informasi melalui prosedur resmi jika diperlukan.</p></div></div><div className="modal-footer"><button type="button" className="button button-secondary" onClick={()=>setSelected(null)}>Batal</button><button disabled={saving||(['rejected','revision'].includes(status)&&!note.trim())} className="button button-primary" type="submit">{saving?'Menyimpan…':'Simpan keputusan'} <Check size={16}/></button></div></form></div></div>}</>;
+
+  async function saveReview(e){
+    e.preventDefault();
+    if(!selected)return;
+    setSaving(true);
+    setMessage('');
+    setError('');
+    try {
+      const {error:err}=await supabase.rpc('admin_update_report_status',{p_report_id:selected.id,p_status:status,p_admin_note:note.trim()||null});
+      if(err)throw err;
+      setMessage('Status laporan berhasil diperbarui.');
+      await refresh();
+      setSelected(null);
+    } catch(err){
+      setError(err.message||'Gagal memperbarui status.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <>
+    <PageTitle eyebrow="PUSAT KENDALI" title="Dashboard admin" subtitle="Verifikasi laporan masuk, catat keputusan, dan perbarui tindak lanjut."/>
+    <div className="admin-stats">
+      <StatCard icon={<FileCheck2 size={19}/>} label="Total laporan" value={counts.total} tone="blue" foot="Semua laporan"/>
+      <StatCard icon={<Clock3 size={19}/>} label="Menunggu verifikasi" value={counts.pending} tone="orange" foot="Perlu diperiksa"/>
+      <StatCard icon={<ShieldCheck size={19}/>} label="Sedang diverifikasi" value={counts.reviewing} tone="purple" foot="Dalam pemeriksaan"/>
+      <StatCard icon={<ArrowDownToLine size={19}/>} label="Diteruskan / tindak lanjut" value={counts.action} tone="green" foot="Memerlukan pemantauan"/>
+    </div>
+    <section className="content-card table-card">
+      <div className="card-heading">
+        <div><h3>Manajemen laporan</h3><p>Pilih laporan untuk memeriksa detail dan menentukan status.</p></div>
+        <button className="button button-secondary button-sm" onClick={refresh}><RefreshCw size={15}/> Segarkan</button>
+      </div>
+      <div className="filter-toolbar admin-filter">
+        <div className="search-box"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari ID, username pelapor, kategori, lokasi…"/></div>
+        <div className="filter-select"><Filter size={16}/><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">Semua status</option>{Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select><ChevronDown size={15}/></div>
+      </div>
+      {error&&!selected&&<div className="notice notice-error"><AlertCircle size={17}/>{error}</div>}
+      {message&&!selected&&<div className="notice notice-success"><CheckCircle2 size={17}/>{message}</div>}
+      {loading?<LoadingRows/>:visible.length===0?<EmptyState title="Tidak ada laporan" text="Laporan yang sesuai pencarian atau filter akan muncul di sini."/>:(
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>ID / Tanggal</th>
+                <th>Pelapor (Username)</th>
+                <th>Kategori</th>
+                <th>Lokasi</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(r=>(
+                <tr key={r.id}>
+                  <td><b>{shortId(r.id)}</b><small>{formatDate(r.created_at)}</small></td>
+                  <td className="reporter-cell">
+                    <div className="reporter-chip">
+                      <span className="reporter-avatar">{(r.reporterName||'P').slice(0,1).toUpperCase()}</span>
+                      <div>
+                        <b>{r.reporterName||'Pengguna'}</b>
+                        <small className="reporter-id">{shortId(r.user_id)}</small>
+                      </div>
+                    </div>
+                  </td>
+                  <td>{r.category}</td>
+                  <td className="location-cell">{r.location}</td>
+                  <td><StatusBadge status={r.status}/></td>
+                  <td><button className="button button-secondary button-sm" onClick={()=>openReport(r)}>Periksa <ArrowRight size={14}/></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+    {selected&&<div className="modal-backdrop" onClick={()=>setSelected(null)}><div className="modal-card admin-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">VERIFIKASI · {shortId(selected.id)}</span><h2>Periksa laporan</h2></div><button className="icon-button" onClick={()=>setSelected(null)}><X size={19}/></button></div><form onSubmit={saveReview}><div className="modal-body"><div className="report-byline"><div className="avatar">{(selected.reporterName||'P').slice(0,1).toUpperCase()}</div><div><b>{selected.reporterName||'Pengguna'}</b><small>ID Akun: {shortId(selected.user_id)} · {formatDate(selected.created_at)}</small></div><StatusBadge status={selected.status}/></div><DetailLine label="Kategori" value={selected.category}/><DetailLine label="Lokasi" value={selected.location}/><DetailLine label="Waktu kejadian" value={formatDate(selected.incident_time)}/><div className="detail-block"><b>Deskripsi pelapor</b><p>{selected.description}</p></div>{selected.latitude&&selected.longitude&&<a className="text-link" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${selected.latitude}&mlon=${selected.longitude}#map=17/${selected.latitude}/${selected.longitude}`}><MapPin size={15}/> Lihat koordinat di peta <ArrowRight size={14}/></a>}<AdminPhoto path={selected.photo_path}/><div className="review-divider"/><Field label="Keputusan / status" required><select value={status} onChange={e=>setStatus(e.target.value)} required>{Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></Field><Field label="Catatan verifikasi" hint="Wajib diisi jika laporan ditolak atau perlu perbaikan. Jelaskan alasan dengan sopan."><textarea rows="3" value={note} onChange={e=>setNote(e.target.value)} maxLength={2000} placeholder="Contoh: Mohon tambahkan patokan lokasi agar kejadian dapat diperiksa…"/></Field>{['rejected','revision'].includes(status)&&!note.trim()&&<div className="notice notice-info"><Info size={16}/> Status ini memerlukan catatan alasan.</div>}{error&&<div className="notice notice-error"><AlertCircle size={17}/>{error}</div>}{message&&<div className="notice notice-success"><CheckCircle2 size={17}/>{message}</div>}<div className="disclaimer compact-disclaimer"><Info size={16}/><p>Verifikasi aplikasi bukan penetapan kesalahan hukum. Teruskan informasi melalui prosedur resmi jika diperlukan.</p></div></div><div className="modal-footer"><button type="button" className="button button-secondary" onClick={()=>setSelected(null)}>Batal</button><button disabled={saving||(['rejected','revision'].includes(status)&&!note.trim())} className="button button-primary" type="submit">{saving?'Menyimpan…':'Simpan keputusan'} <Check size={16}/></button></div></form></div></div>}
+  </>;
 }
 function AdminPhoto({path}) {const [url,setUrl]=useState('');const [photoError,setPhotoError]=useState('');useEffect(()=>{let active=true;setUrl('');setPhotoError('');if(path)supabase.storage.from('report-photos').createSignedUrl(path,60).then(({data,error})=>{if(!active)return;if(error||!data?.signedUrl)setPhotoError(`Foto tidak dapat dimuat${error?.message?`: ${error.message}`:'.'}`);else setUrl(data.signedUrl);});return()=>{active=false;};},[path]);if(photoError)return <div className="notice notice-error"><AlertCircle size={16}/>{photoError}</div>;return url?<div className="admin-photo-wrap"><b>Foto pendukung</b><a href={url} target="_blank" rel="noreferrer"><img className="detail-photo" src={url} alt="Foto pendukung laporan"/></a></div>:null;}
 function StatusBadge({status}) {const s=STATUS[status]||STATUS.pending;return <span className={`status-badge ${s.className}`}><span/>{s.label}</span>;}

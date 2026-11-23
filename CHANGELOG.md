@@ -1367,6 +1367,7 @@ Setiap perubahan berikutnya pada sistem dicatat di `CHANGELOG.md` dengan format 
 | 17 November 2026 | Bug fix alur sistem (`fix/bug-alur-sistem`) | Committed `872aefc`, pushed |
 | 23 November 2026 | Removed other menus in admin page and into just purely an admin dashboard | Completed |
 | 23 November 2026 | Added animated splash screen & gated blurred landing view for guests | Completed |
+| 23 November 2026 | Added reporter username in admin dashboard & user edit and resubmit feature | Completed |
 
 ## 2. Known Source Code Files
 
