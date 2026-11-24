@@ -1528,6 +1528,7 @@ Commit `feeede0` di-push ke branch `main`. Server FastAPI dapat dijalankan langs
 
 ---
 
+
 # 24 NOVEMBER 2026 — TUESDAY
 
 ## CHANGE-20261124-001 — IMPLEMENT LIGHTWEIGHT AI PHOTO TRAFFIC DETECTION & TEXT-PHOTO CROSS-CHECK (YOLOV8N ONNX)
@@ -1571,6 +1572,30 @@ Commit `feeede0` di-push ke branch `main`. Server FastAPI dapat dijalankan langs
 ### 5. Status & Pending Work
 - **Status:** `VERIFIED` (lokal) / Siap Review PR ke `main` pada branch `feat/ai-photo-detection`.
 - **Pending Work:** Menjalankan migrasi `supabase/migrations/20261124_ai_photo_detection.sql` di Supabase SQL Editor apabila ingin menyimpan hasil skor foto permanen ke database.
+
+---
+
+# 24 NOVEMBER 2026 — TUESDAY
+
+## CHANGE-20261124-001 — PURE LOGIN/AUTHENTICATION PAGE LAYOUT
+
+**Date:** 24 November 2026  
+**Day:** Tuesday  
+**Timezone:** Asia/Makassar (WITA)  
+**Task Type:** UI/UX & Layout Refactoring  
+
+### 1. Requirements
+- Menghilangkan navigasi/sidebar sebelah kiri pada halaman `/auth` (login/registrasi).
+- Menjadikan halaman autentikasi sebagai *pure login page* dengan konten form yang terpusat dan tanpa elemen sidebar yang tidak perlu.
+- Menyesuaikan header topbar saat berada di halaman autentikasi untuk menampilkan branding langsung dan menyembunyikan tombol "Masuk" yang berulang.
+
+### 2. Files Modified
+- `src/App.jsx` (Modified)
+- `src/styles.css` (Modified)
+
+### 3. Result
+Sidebar tidak lagi muncul pada halaman login `/auth`. Layout bersih dan fokus sepenuhnya ke form login/register.
+
 
 ---
 
