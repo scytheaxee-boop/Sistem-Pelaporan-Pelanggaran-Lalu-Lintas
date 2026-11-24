@@ -368,6 +368,57 @@ async function checkSpamWithAI(description) {
   return await resp.json();
 }
 
+async function analyzePhotoWithAI(fileOrBlob, filename = 'photo.jpg', description = '', category = '') {
+  const form = new FormData();
+  form.append('file', fileOrBlob, filename);
+  if (description) form.append('description', description);
+  if (category) form.append('category', category);
+  const resp = await fetch(`${ML_API_BASE}/api/ml/analyze-photo`, {
+    method: 'POST',
+    body: form
+  });
+  if (!resp.ok) {
+    let msg = `HTTP ${resp.status}`;
+    try {
+      const errJson = await resp.json();
+      if (errJson?.detail) msg = errJson.detail;
+    } catch {}
+    throw new Error(msg);
+  }
+  return await resp.json();
+}
+
+function buildPhotoAiPayload(photoAi) {
+  if (!photoAi) return {};
+  const combinedSummary = [photoAi.summary, photoAi.match_summary].filter(Boolean).join(' · ');
+  return {
+    photo_ai_prediction: photoAi.prediction,
+    photo_ai_confidence: photoAi.confidence,
+    photo_ai_objects: photoAi.detected_objects || [],
+    photo_ai_summary: combinedSummary || null,
+    photo_ai_checked_at: photoAi.checked_at || new Date().toISOString()
+  };
+}
+
+function stripOptionalAiFields(payload, err) {
+  if (!err) return false;
+  const msg = err.message || '';
+  if (msg.includes('spam_') || msg.includes('photo_ai_') || err.code === 'PGRST204') {
+    delete payload.spam_prediction;
+    delete payload.spam_probability;
+    delete payload.normal_probability;
+    delete payload.spam_model_version;
+    delete payload.spam_checked_at;
+    delete payload.photo_ai_prediction;
+    delete payload.photo_ai_confidence;
+    delete payload.photo_ai_objects;
+    delete payload.photo_ai_summary;
+    delete payload.photo_ai_checked_at;
+    return true;
+  }
+  return false;
+}
+
 function CreateReportPage({session}) {
   const navigate = useNavigate();
   const [category,setCategory] = useState(CATEGORIES[0]);
@@ -417,13 +468,13 @@ function CreateReportPage({session}) {
         if(uploadError) throw uploadError;
       }
 
-      // Deteksi AI otomatis secara silent di background tanpa membebani warga
-      let autoAi = null;
-      try {
-        autoAi = await checkSpamWithAI(cleanDescription);
-      } catch (_) {
-        // Jika service ML offline, pelaporan warga tetap berjalan mulus
-      }
+      // Deteksi AI otomatis (teks + foto) secara silent di background tanpa membebani warga
+      const [spamRes, photoRes] = await Promise.allSettled([
+        checkSpamWithAI(cleanDescription),
+        file ? analyzePhotoWithAI(file, file.name, cleanDescription, category) : Promise.resolve(null)
+      ]);
+      const autoAi = spamRes.status === 'fulfilled' ? spamRes.value : null;
+      const autoPhotoAi = photoRes.status === 'fulfilled' ? photoRes.value : null;
 
       const payload={
         user_id:session.user.id,
@@ -444,14 +495,12 @@ function CreateReportPage({session}) {
         payload.spam_model_version = autoAi.model_version || '1.0.0';
         payload.spam_checked_at = new Date().toISOString();
       }
+      if (autoPhotoAi) {
+        Object.assign(payload, buildPhotoAiPayload(autoPhotoAi));
+      }
 
       let {data,error:insertError} = await supabase.from('reports').insert(payload).select('id').single();
-      if (insertError && (insertError.message?.includes('spam_') || insertError.code === 'PGRST204')) {
-        delete payload.spam_prediction;
-        delete payload.spam_probability;
-        delete payload.normal_probability;
-        delete payload.spam_model_version;
-        delete payload.spam_checked_at;
+      if (stripOptionalAiFields(payload, insertError)) {
         const fallbackRes = await supabase.from('reports').insert(payload).select('id').single();
         if (fallbackRes.error) throw fallbackRes.error;
         data = fallbackRes.data;
@@ -672,11 +721,13 @@ function EditReportModal({report, session, onClose, onSuccess}) {
         finalPhotoPath = null;
       }
 
-      // Deteksi AI otomatis secara silent di background
-      let autoAi = null;
-      try {
-        autoAi = await checkSpamWithAI(cleanDescription);
-      } catch (_) {}
+      // Deteksi AI otomatis (teks + foto baru) secara silent di background
+      const [spamRes, photoRes] = await Promise.allSettled([
+        checkSpamWithAI(cleanDescription),
+        file ? analyzePhotoWithAI(file, file.name, cleanDescription, category) : Promise.resolve(null)
+      ]);
+      const autoAi = spamRes.status === 'fulfilled' ? spamRes.value : null;
+      const autoPhotoAi = photoRes.status === 'fulfilled' ? photoRes.value : null;
 
       // 1. Coba lewat RPC user_resubmit_report
       const { error: rpcErr } = await supabase.rpc('user_resubmit_report', {
@@ -690,16 +741,28 @@ function EditReportModal({report, session, onClose, onSuccess}) {
         p_photo_path: finalPhotoPath
       });
 
+      const aiPatch = {};
+      if (autoAi) {
+        aiPatch.spam_prediction = autoAi.prediction;
+        aiPatch.spam_probability = autoAi.spam_probability;
+        aiPatch.normal_probability = autoAi.normal_probability;
+        aiPatch.spam_model_version = autoAi.model_version || '1.0.0';
+        aiPatch.spam_checked_at = new Date().toISOString();
+      }
+      if (autoPhotoAi) {
+        Object.assign(aiPatch, buildPhotoAiPayload(autoPhotoAi));
+      } else if (removeExistingPhoto) {
+        aiPatch.photo_ai_prediction = null;
+        aiPatch.photo_ai_confidence = null;
+        aiPatch.photo_ai_objects = null;
+        aiPatch.photo_ai_summary = null;
+        aiPatch.photo_ai_checked_at = null;
+      }
+
       if (!rpcErr) {
-        if (autoAi) {
+        if (Object.keys(aiPatch).length > 0) {
           try {
-            await supabase.from('reports').update({
-              spam_prediction: autoAi.prediction,
-              spam_probability: autoAi.spam_probability,
-              normal_probability: autoAi.normal_probability,
-              spam_model_version: autoAi.model_version || '1.0.0',
-              spam_checked_at: new Date().toISOString()
-            }).eq('id', report.id);
+            await supabase.from('reports').update(aiPatch).eq('id', report.id);
           } catch (_) {}
         }
       } else {
@@ -713,22 +776,11 @@ function EditReportModal({report, session, onClose, onSuccess}) {
           incident_time: incidentTime ? new Date(incidentTime).toISOString() : null,
           photo_path: finalPhotoPath,
           status: 'pending',
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          ...aiPatch
         };
-        if (autoAi) {
-          payload.spam_prediction = autoAi.prediction;
-          payload.spam_probability = autoAi.spam_probability;
-          payload.normal_probability = autoAi.normal_probability;
-          payload.spam_model_version = autoAi.model_version || '1.0.0';
-          payload.spam_checked_at = new Date().toISOString();
-        }
         let { error: directErr } = await supabase.from('reports').update(payload).eq('id', report.id);
-        if (directErr && (directErr.message?.includes('spam_') || directErr.code === 'PGRST204')) {
-          delete payload.spam_prediction;
-          delete payload.spam_probability;
-          delete payload.normal_probability;
-          delete payload.spam_model_version;
-          delete payload.spam_checked_at;
+        if (stripOptionalAiFields(payload, directErr)) {
           const retry = await supabase.from('reports').update(payload).eq('id', report.id);
           if (retry.error) throw retry.error;
         } else if (directErr) {
@@ -868,40 +920,52 @@ function AdminPage({profile}) {
   const [adminSpamVerify,setAdminSpamVerify]=useState('');
   const [adminAiTesting,setAdminAiTesting]=useState(false);
   const [adminAiResult,setAdminAiResult]=useState(null);
+  const [adminPhotoAiTesting,setAdminPhotoAiTesting]=useState(false);
+  const [adminPhotoAiResult,setAdminPhotoAiResult]=useState(null);
 
   const refresh=useCallback(async()=>{
     setLoading(true);
     setError('');
     try {
-      // 1. Ambil laporan beserta relasi profiles dan kolom spam
+      // 1. Ambil laporan beserta relasi profiles dan kolom AI (spam + foto)
+      const selectWithAllAi = 'id,user_id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,spam_prediction,spam_probability,normal_probability,spam_model_version,spam_checked_at,admin_spam_verification,photo_ai_prediction,photo_ai_confidence,photo_ai_objects,photo_ai_summary,photo_ai_checked_at,profiles!user_id(full_name)';
       const selectFieldsWithSpam = 'id,user_id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,spam_prediction,spam_probability,normal_probability,spam_model_version,spam_checked_at,admin_spam_verification,profiles!user_id(full_name)';
       const selectFallback = 'id,user_id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,profiles!user_id(full_name)';
 
       let repData = null;
-      let {data:d1, error:err1} = await supabase
+      let {data:d0, error:err0} = await supabase
         .from('reports')
-        .select(selectFieldsWithSpam)
+        .select(selectWithAllAi)
         .order('created_at',{ascending:false})
         .limit(500);
 
-      if (!err1) {
-        repData = d1;
+      if (!err0) {
+        repData = d0;
       } else {
-        let {data:d2, error:err2} = await supabase
+        let {data:d1, error:err1} = await supabase
           .from('reports')
-          .select(selectFallback)
+          .select(selectFieldsWithSpam)
           .order('created_at',{ascending:false})
           .limit(500);
-        if (err2) {
-          const res = await supabase
+        if (!err1) {
+          repData = d1;
+        } else {
+          let {data:d2, error:err2} = await supabase
             .from('reports')
-            .select('id,user_id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,profiles(full_name)')
+            .select(selectFallback)
             .order('created_at',{ascending:false})
             .limit(500);
-          if (res.error) throw res.error;
-          repData = res.data;
-        } else {
-          repData = d2;
+          if (err2) {
+            const res = await supabase
+              .from('reports')
+              .select('id,user_id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,profiles(full_name)')
+              .order('created_at',{ascending:false})
+              .limit(500);
+            if (res.error) throw res.error;
+            repData = res.data;
+          } else {
+            repData = d2;
+          }
         }
       }
 
@@ -969,6 +1033,25 @@ function AdminPage({profile}) {
   const closeReview=useCallback(()=>{if(!saving)setSelected(null);},[saving]);
   useEscape(closeReview,!!selected);
 
+  const scanStoragePhoto = useCallback(async (report) => {
+    if (!report?.photo_path) return null;
+    const { data, error: signErr } = await supabase.storage.from('report-photos').createSignedUrl(report.photo_path, 60);
+    if (signErr || !data?.signedUrl) throw new Error(signErr?.message || 'Gagal mengakses URL foto.');
+    const imgResp = await fetch(data.signedUrl);
+    if (!imgResp.ok) throw new Error(`Gagal mengunduh foto (HTTP ${imgResp.status}).`);
+    const blob = await imgResp.blob();
+    const res = await analyzePhotoWithAI(
+      blob,
+      report.photo_path.split('/').pop() || 'photo.jpg',
+      report.description || '',
+      report.category || ''
+    );
+    return {
+      ...res,
+      checked_at: new Date().toISOString()
+    };
+  }, []);
+
   function openReport(r){
     setSelected(r);
     setStatus(r.status);
@@ -1005,7 +1088,14 @@ function AdminPage({profile}) {
             recommendation: res.recommendation
           };
           setAdminAiResult(scanned);
-          setReports(prev => prev.map(item => item.id === r.id ? { ...item, ...scanned } : item));
+          setReports(prev => prev.map(item => item.id === r.id ? {
+            ...item,
+            spam_prediction: scanned.prediction,
+            spam_probability: scanned.spam_probability,
+            normal_probability: scanned.normal_probability,
+            spam_model_version: scanned.model_version,
+            spam_checked_at: scanned.checked_at
+          } : item));
           try {
             await supabase.from('reports').update({
               spam_prediction: scanned.prediction,
@@ -1019,6 +1109,44 @@ function AdminPage({profile}) {
           // Layanan ML belum aktif
         }).finally(() => {
           setAdminAiTesting(false);
+        });
+      }
+    }
+
+    if (r.photo_ai_prediction) {
+      setAdminPhotoAiResult({
+        prediction: r.photo_ai_prediction,
+        is_traffic_relevant: r.photo_ai_prediction === 'RELEVAN',
+        confidence: r.photo_ai_confidence,
+        detected_objects: Array.isArray(r.photo_ai_objects) ? r.photo_ai_objects : [],
+        summary: r.photo_ai_summary,
+        checked_at: r.photo_ai_checked_at
+      });
+      if (r.photo_path) {
+        // Segarkan analisis kecocokan teks <-> foto secara real-time saat modal dibuka
+        setAdminPhotoAiTesting(true);
+        scanStoragePhoto(r).then((scannedPhoto) => {
+          if (scannedPhoto) setAdminPhotoAiResult(scannedPhoto);
+        }).catch(() => {}).finally(() => {
+          setAdminPhotoAiTesting(false);
+        });
+      }
+    } else {
+      setAdminPhotoAiResult(null);
+      if (r.photo_path) {
+        setAdminPhotoAiTesting(true);
+        scanStoragePhoto(r).then(async (scannedPhoto) => {
+          if (!scannedPhoto) return;
+          setAdminPhotoAiResult(scannedPhoto);
+          const photoPatch = buildPhotoAiPayload(scannedPhoto);
+          setReports(prev => prev.map(item => item.id === r.id ? { ...item, ...photoPatch } : item));
+          try {
+            await supabase.from('reports').update(photoPatch).eq('id', r.id);
+          } catch (_) {}
+        }).catch(() => {
+          // Layanan ML foto belum aktif atau foto tidak dapat diakses
+        }).finally(() => {
+          setAdminPhotoAiTesting(false);
         });
       }
     }
@@ -1038,6 +1166,20 @@ function AdminPage({profile}) {
       setError(`Gagal memeriksa dengan AI: ${err.message}`);
     } finally {
       setAdminAiTesting(false);
+    }
+  }
+
+  async function runAdminPhotoAICheck() {
+    if (!selected?.photo_path) return;
+    setAdminPhotoAiTesting(true);
+    setError('');
+    try {
+      const scannedPhoto = await scanStoragePhoto(selected);
+      setAdminPhotoAiResult(scannedPhoto);
+    } catch (err) {
+      setError(`Gagal memindai foto dengan AI: ${err.message}`);
+    } finally {
+      setAdminPhotoAiTesting(false);
     }
   }
 
@@ -1061,6 +1203,9 @@ function AdminPage({profile}) {
           updatePayload.normal_probability = adminAiResult.normal_probability;
           updatePayload.spam_model_version = adminAiResult.model_version || '1.0.0';
           updatePayload.spam_checked_at = adminAiResult.checked_at || new Date().toISOString();
+        }
+        if (adminPhotoAiResult && adminPhotoAiResult.prediction) {
+          Object.assign(updatePayload, buildPhotoAiPayload(adminPhotoAiResult));
         }
         await supabase.from('reports').update(updatePayload).eq('id', selected.id);
       } catch (_) {}
@@ -1103,7 +1248,7 @@ function AdminPage({profile}) {
                 <th>Pelapor (Username)</th>
                 <th>Kategori</th>
                 <th>Lokasi</th>
-                <th>AI Spam</th>
+                <th>AI Moderasi</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -1124,17 +1269,29 @@ function AdminPage({profile}) {
                   <td>{r.category}</td>
                   <td className="location-cell">{r.location}</td>
                   <td className="ai-col">
-                    {r.spam_prediction === 'SPAM' ? (
-                      <span className="ai-pill spam" title={`Probabilitas Spam: ${(Number(r.spam_probability || 0) * 100).toFixed(1)}%`}>
-                        <AlertTriangle size={11}/> SPAM ({Math.round((r.spam_probability || 0) * 100)}%)
-                      </span>
-                    ) : r.spam_prediction === 'NORMAL' ? (
-                      <span className="ai-pill normal" title={`Probabilitas Normal: ${(Number(r.normal_probability || 0) * 100).toFixed(1)}%`}>
-                        <CheckCircle2 size={11}/> Normal ({Math.round((r.normal_probability || 0) * 100)}%)
-                      </span>
-                    ) : (
-                      <span className="ai-pill neutral">—</span>
-                    )}
+                    <div className="ai-col-stack">
+                      {r.spam_prediction === 'SPAM' ? (
+                        <span className="ai-pill spam" title={`Probabilitas Spam: ${(Number(r.spam_probability || 0) * 100).toFixed(1)}%`}>
+                          <AlertTriangle size={11}/> SPAM ({Math.round((r.spam_probability || 0) * 100)}%)
+                        </span>
+                      ) : r.spam_prediction === 'NORMAL' ? (
+                        <span className="ai-pill normal" title={`Probabilitas Normal: ${(Number(r.spam_probability !== undefined ? (r.normal_probability || 0) : 0) * 100).toFixed(1)}%`}>
+                          <CheckCircle2 size={11}/> Normal ({Math.round((r.normal_probability || 0) * 100)}%)
+                        </span>
+                      ) : (
+                        <span className="ai-pill neutral">—</span>
+                      )}
+                      {r.photo_ai_prediction === 'RELEVAN' && (
+                        <span className="ai-pill normal" title={r.photo_ai_summary || 'Foto relevan lalu lintas'}>
+                          <Camera size={11}/> Foto Relevan
+                        </span>
+                      )}
+                      {r.photo_ai_prediction === 'TIDAK_RELEVAN' && (
+                        <span className="ai-pill spam" title={r.photo_ai_summary || 'Foto tidak relevan lalu lintas'}>
+                          <Camera size={11}/> Foto Tdk Relevan
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td><StatusBadge status={r.status}/></td>
                   <td><button className="button button-secondary button-sm" onClick={()=>openReport(r)}>Periksa <ArrowRight size={14}/></button></td>
@@ -1145,7 +1302,7 @@ function AdminPage({profile}) {
         </div>
       )}
     </section>
-    {selected&&<div className="modal-backdrop" onClick={()=>setSelected(null)}><div className="modal-card admin-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">VERIFIKASI · {shortId(selected.id)}</span><h2>Periksa laporan</h2></div><button className="icon-button" onClick={()=>setSelected(null)}><X size={19}/></button></div><form onSubmit={saveReview}><div className="modal-body"><div className="report-byline"><div className="avatar">{(selected.reporterName||'P').slice(0,1).toUpperCase()}</div><div><b>{selected.reporterName||'Pengguna'}</b><small>ID Akun: {shortId(selected.user_id)} · {formatDate(selected.created_at)}</small></div><StatusBadge status={selected.status}/></div><DetailLine label="Kategori" value={selected.category}/><DetailLine label="Lokasi" value={selected.location}/><DetailLine label="Waktu kejadian" value={formatDate(selected.incident_time)}/><div className="detail-block"><b>Deskripsi pelapor</b><p>{selected.description}</p></div>{selected.latitude&&selected.longitude&&<a className="text-link" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${selected.latitude}&mlon=${selected.longitude}#map=17/${selected.latitude}/${selected.longitude}`}><MapPin size={15}/> Lihat koordinat di peta <ArrowRight size={14}/></a>}<AdminPhoto path={selected.photo_path}/><div className="admin-ai-panel"><div className="admin-ai-header"><div><b><Sparkles size={14} style={{display:'inline',verticalAlign:'-2px',marginRight:5}}/> Moderasi AI Spam Detection</b><small>Model Machine Learning Multinomial Naive Bayes (Otomatis)</small></div><button type="button" disabled={adminAiTesting} onClick={runAdminAICheck} className="button button-secondary button-sm"><RefreshCw size={13} className={adminAiTesting ? 'spin' : ''}/>{adminAiTesting ? 'Menganalisis…' : 'Pindai ulang AI'}</button></div>{adminAiTesting ? (<div className="notice notice-info compact-notice" style={{marginBottom: 14}}><RefreshCw size={14} className="spin" style={{display:'inline-block',marginRight:6,verticalAlign:'-2px'}}/><span>Sedang memindai dan menganalisis teks laporan dengan AI secara otomatis…</span></div>) : adminAiResult ? (<div className="admin-ai-grid"><div className="ai-stat-tile"><span>Hasil Prediksi</span><strong className={adminAiResult.prediction === 'SPAM' ? 'text-red' : 'text-green'}>{adminAiResult.prediction === 'SPAM' ? 'TERINDIKASI SPAM' : 'NORMAL'}</strong></div><div className="ai-stat-tile"><span>Probabilitas Spam</span><b>{(Number(adminAiResult.spam_probability || 0) * 100).toFixed(1)}%</b></div><div className="ai-stat-tile"><span>Probabilitas Normal</span><b>{(Number(adminAiResult.normal_probability || 0) * 100).toFixed(1)}%</b></div><div className="ai-stat-tile"><span>Waktu Pemeriksaan</span><b>{adminAiResult.checked_at ? formatDate(adminAiResult.checked_at) : 'Baru saja'}</b></div></div>) : (<div className="notice notice-info compact-notice" style={{marginBottom: 14}}><Info size={15}/> Layanan AI belum aktif atau sedang offline (port 8000).</div>)}<div className="admin-spam-verify-row"><span>Status Verifikasi Administrator:</span><div className="verify-options"><label className="radio-label"><input type="radio" name="admin_spam_verification" value="" checked={!adminSpamVerify} onChange={() => setAdminSpamVerify('')}/><span>Belum diverifikasi</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="verified_normal" checked={adminSpamVerify === 'verified_normal'} onChange={() => setAdminSpamVerify('verified_normal')}/><span className="text-green">Verifikasi: Normal</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="verified_spam" checked={adminSpamVerify === 'verified_spam'} onChange={() => setAdminSpamVerify('verified_spam')}/><span className="text-red">Verifikasi: Spam</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="dismissed" checked={adminSpamVerify === 'dismissed'} onChange={() => setAdminSpamVerify('dismissed')}/><span className="text-muted">Abaikan</span></label></div></div><div className="admin-ai-disclaimer"><Info size={13}/><span>Hasil AI hanya alat bantu pendukung moderasi. Administrator memiliki wewenang penuh dalam menentukan keabsahan laporan.</span></div></div><div className="review-divider"/><Field label="Keputusan / status" required><select value={status} onChange={e=>setStatus(e.target.value)} required>{Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></Field><Field label="Catatan verifikasi" hint="Wajib diisi jika laporan ditolak atau perlu perbaikan. Jelaskan alasan dengan sopan."><textarea rows="3" value={note} onChange={e=>setNote(e.target.value)} maxLength={2000} placeholder="Contoh: Mohon tambahkan patokan lokasi agar kejadian dapat diperiksa…"/></Field>{['rejected','revision'].includes(status)&&!note.trim()&&<div className="notice notice-info"><Info size={16}/> Status ini memerlukan catatan alasan.</div>}{error&&<div className="notice notice-error"><AlertCircle size={17}/>{error}</div>}{message&&<div className="notice notice-success"><CheckCircle2 size={17}/>{message}</div>}<div className="disclaimer compact-disclaimer"><Info size={16}/><p>Verifikasi aplikasi bukan penetapan kesalahan hukum. Teruskan informasi melalui prosedur resmi jika diperlukan.</p></div></div><div className="modal-footer"><button type="button" className="button button-secondary" onClick={()=>setSelected(null)}>Batal</button><button disabled={saving||(['rejected','revision'].includes(status)&&!note.trim())} className="button button-primary" type="submit">{saving?'Menyimpan…':'Simpan keputusan'} <Check size={16}/></button></div></form></div></div>}
+    {selected&&<div className="modal-backdrop" onClick={()=>setSelected(null)}><div className="modal-card admin-modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">VERIFIKASI · {shortId(selected.id)}</span><h2>Periksa laporan</h2></div><button className="icon-button" onClick={()=>setSelected(null)}><X size={19}/></button></div><form onSubmit={saveReview}><div className="modal-body"><div className="report-byline"><div className="avatar">{(selected.reporterName||'P').slice(0,1).toUpperCase()}</div><div><b>{selected.reporterName||'Pengguna'}</b><small>ID Akun: {shortId(selected.user_id)} · {formatDate(selected.created_at)}</small></div><StatusBadge status={selected.status}/></div><DetailLine label="Kategori" value={selected.category}/><DetailLine label="Lokasi" value={selected.location}/><DetailLine label="Waktu kejadian" value={formatDate(selected.incident_time)}/><div className="detail-block"><b>Deskripsi pelapor</b><p>{selected.description}</p></div>{selected.latitude&&selected.longitude&&<a className="text-link" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${selected.latitude}&mlon=${selected.longitude}#map=17/${selected.latitude}/${selected.longitude}`}><MapPin size={15}/> Lihat koordinat di peta <ArrowRight size={14}/></a>}<AdminPhoto path={selected.photo_path}/><div className="admin-ai-panel"><div className="admin-ai-header"><div><b><Sparkles size={14} style={{display:'inline',verticalAlign:'-2px',marginRight:5}}/> Moderasi AI Spam Detection</b><small>Model Machine Learning Multinomial Naive Bayes (Otomatis)</small></div><button type="button" disabled={adminAiTesting} onClick={runAdminAICheck} className="button button-secondary button-sm"><RefreshCw size={13} className={adminAiTesting ? 'spin' : ''}/>{adminAiTesting ? 'Menganalisis…' : 'Pindai ulang AI'}</button></div>{adminAiTesting ? (<div className="notice notice-info compact-notice" style={{marginBottom: 14}}><RefreshCw size={14} className="spin" style={{display:'inline-block',marginRight:6,verticalAlign:'-2px'}}/><span>Sedang memindai dan menganalisis teks laporan dengan AI secara otomatis…</span></div>) : adminAiResult ? (<div className="admin-ai-grid"><div className="ai-stat-tile"><span>Hasil Prediksi</span><strong className={adminAiResult.prediction === 'SPAM' ? 'text-red' : 'text-green'}>{adminAiResult.prediction === 'SPAM' ? 'TERINDIKASI SPAM' : 'NORMAL'}</strong></div><div className="ai-stat-tile"><span>Probabilitas Spam</span><b>{(Number(adminAiResult.spam_probability || 0) * 100).toFixed(1)}%</b></div><div className="ai-stat-tile"><span>Probabilitas Normal</span><b>{(Number(adminAiResult.normal_probability || 0) * 100).toFixed(1)}%</b></div><div className="ai-stat-tile"><span>Waktu Pemeriksaan</span><b>{adminAiResult.checked_at ? formatDate(adminAiResult.checked_at) : 'Baru saja'}</b></div></div>) : (<div className="notice notice-info compact-notice" style={{marginBottom: 14}}><Info size={15}/> Layanan AI belum aktif atau sedang offline (port 8000).</div>)}{selected.photo_path && (<div className="ai-photo-panel"><div className="admin-ai-header"><div><b><Camera size={14} style={{display:'inline',verticalAlign:'-2px',marginRight:5}}/> Analisis AI Foto Bukti</b><small>Deteksi Objek Lalu Lintas YOLOv8n ONNX (Otomatis)</small></div><button type="button" disabled={adminPhotoAiTesting} onClick={runAdminPhotoAICheck} className="button button-secondary button-sm"><RefreshCw size={13} className={adminPhotoAiTesting ? 'spin' : ''}/>{adminPhotoAiTesting ? 'Memindai foto…' : 'Pindai ulang foto'}</button></div>{adminPhotoAiTesting ? (<div className="notice notice-info compact-notice" style={{marginBottom: 10}}><RefreshCw size={14} className="spin" style={{display:'inline-block',marginRight:6,verticalAlign:'-2px'}}/><span>Sedang menganalisis objek pada foto bukti…</span></div>) : adminPhotoAiResult ? (<> <div className="admin-ai-grid"><div className="ai-stat-tile"><span>Relevansi Foto</span><strong className={adminPhotoAiResult.prediction === 'RELEVAN' ? 'text-green' : 'text-red'}>{adminPhotoAiResult.prediction === 'RELEVAN' ? 'RELEVAN LALU LINTAS' : 'TIDAK RELEVAN'}</strong></div><div className="ai-stat-tile"><span>Kecocokan Teks ↔ Foto</span><strong className={adminPhotoAiResult.match_status === 'COCOK' ? 'text-green' : adminPhotoAiResult.match_status === 'SEBAGIAN_COCOK' ? 'text-muted' : 'text-red'}>{adminPhotoAiResult.match_status === 'COCOK' ? 'COCOK' : adminPhotoAiResult.match_status === 'SEBAGIAN_COCOK' ? 'SEBAGIAN COCOK' : adminPhotoAiResult.match_status === 'TIDAK_COCOK' ? 'TIDAK COCOK' : '—'}</strong></div><div className="ai-stat-tile"><span>Keyakinan Objek</span><b>{(Number(adminPhotoAiResult.confidence || 0) * 100).toFixed(1)}%</b></div><div className="ai-stat-tile"><span>Objek Terdeteksi</span><b>{(adminPhotoAiResult.detected_objects || []).length} jenis</b></div></div>{adminPhotoAiResult.match_summary && <p className="ai-photo-summary"><b>Hasil Cocok Teks:</b> {adminPhotoAiResult.match_summary}</p>}{adminPhotoAiResult.summary && <p className="ai-photo-summary">{adminPhotoAiResult.summary}</p>}{(adminPhotoAiResult.detected_objects || []).length > 0 && (<div className="ai-object-chips">{adminPhotoAiResult.detected_objects.map((obj) => (<span key={obj.label} className="ai-object-chip">{obj.label_id || obj.label} ×{obj.count} ({Math.round(Number(obj.confidence || 0) * 100)}%)</span>))}</div>)}</>) : (<div className="notice notice-info compact-notice" style={{marginBottom: 10}}><Info size={15}/> Analisis foto belum tersedia (pastikan layanan AI di port 8000 aktif).</div>)}</div>)}<div className="admin-spam-verify-row"><span>Status Verifikasi Administrator:</span><div className="verify-options"><label className="radio-label"><input type="radio" name="admin_spam_verification" value="" checked={!adminSpamVerify} onChange={() => setAdminSpamVerify('')}/><span>Belum diverifikasi</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="verified_normal" checked={adminSpamVerify === 'verified_normal'} onChange={() => setAdminSpamVerify('verified_normal')}/><span className="text-green">Verifikasi: Normal</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="verified_spam" checked={adminSpamVerify === 'verified_spam'} onChange={() => setAdminSpamVerify('verified_spam')}/><span className="text-red">Verifikasi: Spam</span></label><label className="radio-label"><input type="radio" name="admin_spam_verification" value="dismissed" checked={adminSpamVerify === 'dismissed'} onChange={() => setAdminSpamVerify('dismissed')}/><span className="text-muted">Abaikan</span></label></div></div><div className="admin-ai-disclaimer"><Info size={13}/><span>Hasil AI hanya alat bantu pendukung moderasi. Administrator memiliki wewenang penuh dalam menentukan keabsahan laporan.</span></div></div><div className="review-divider"/><Field label="Keputusan / status" required><select value={status} onChange={e=>setStatus(e.target.value)} required>{Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></Field><Field label="Catatan verifikasi" hint="Wajib diisi jika laporan ditolak atau perlu perbaikan. Jelaskan alasan dengan sopan."><textarea rows="3" value={note} onChange={e=>setNote(e.target.value)} maxLength={2000} placeholder="Contoh: Mohon tambahkan patokan lokasi agar kejadian dapat diperiksa…"/></Field>{['rejected','revision'].includes(status)&&!note.trim()&&<div className="notice notice-info"><Info size={16}/> Status ini memerlukan catatan alasan.</div>}{error&&<div className="notice notice-error"><AlertCircle size={17}/>{error}</div>}{message&&<div className="notice notice-success"><CheckCircle2 size={17}/>{message}</div>}<div className="disclaimer compact-disclaimer"><Info size={16}/><p>Verifikasi aplikasi bukan penetapan kesalahan hukum. Teruskan informasi melalui prosedur resmi jika diperlukan.</p></div></div><div className="modal-footer"><button type="button" className="button button-secondary" onClick={()=>setSelected(null)}>Batal</button><button disabled={saving||(['rejected','revision'].includes(status)&&!note.trim())} className="button button-primary" type="submit">{saving?'Menyimpan…':'Simpan keputusan'} <Check size={16}/></button></div></form></div></div>}
   </>;
 }
 function AdminPhoto({path}) {const [url,setUrl]=useState('');const [photoError,setPhotoError]=useState('');useEffect(()=>{let active=true;setUrl('');setPhotoError('');if(path)supabase.storage.from('report-photos').createSignedUrl(path,60).then(({data,error})=>{if(!active)return;if(error||!data?.signedUrl)setPhotoError(`Foto tidak dapat dimuat${error?.message?`: ${error.message}`:'.'}`);else setUrl(data.signedUrl);});return()=>{active=false;};},[path]);if(photoError)return <div className="notice notice-error"><AlertCircle size={16}/>{photoError}</div>;return url?<div className="admin-photo-wrap"><b>Foto pendukung</b><a href={url} target="_blank" rel="noreferrer"><img className="detail-photo" src={url} alt="Foto pendukung laporan"/></a></div>:null;}

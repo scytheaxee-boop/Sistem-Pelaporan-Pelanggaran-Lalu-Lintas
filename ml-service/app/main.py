@@ -10,11 +10,12 @@ if str(BASE_DIR) not in sys.path:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes.spam import router as spam_router
+from app.routes.photo import router as photo_router
 
 app = FastAPI(
-    title="LaporLintas ML Service - AI Spam Detection",
-    description="Layanan Machine Learning untuk mendeteksi spam pada deskripsi laporan lalu lintas menggunakan Multinomial Naive Bayes.",
-    version="1.0.0"
+    title="LaporLintas ML Service - AI Moderation & Vision",
+    description="Layanan Machine Learning untuk deteksi spam teks (Multinomial Naive Bayes) dan relevansi foto lalu lintas (YOLOv8n ONNX).",
+    version="1.1.0"
 )
 
 # CORS Middleware for React + Vite Frontend
@@ -27,12 +28,13 @@ app.add_middleware(
 )
 
 app.include_router(spam_router)
+app.include_router(photo_router)
 
 @app.get("/")
 async def root():
     return {
-        "service": "LaporLintas AI Spam Detection Service",
-        "algorithm": "Multinomial Naive Bayes",
+        "service": "LaporLintas AI Moderation & Vision Service",
+        "algorithms": ["Multinomial Naive Bayes (NLP)", "YOLOv8n ONNX (Object Detection)"],
         "status": "online",
         "docs_url": "/docs"
     }

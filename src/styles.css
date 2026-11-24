@@ -560,5 +560,41 @@
   }
 }
 
+.ai-col-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.ai-photo-panel {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed #cbd5e1;
+}
+.ai-photo-summary {
+  font-size: 11px;
+  color: #334155;
+  margin: 8px 0;
+  line-height: 1.5;
+}
+.ai-object-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+.ai-object-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  font-size: 10px;
+  font-weight: 600;
+  color: #334155;
+}
+
 
 
