@@ -13,8 +13,11 @@
 .admin-table td:last-child .button{white-space:nowrap}
 @media(max-width:850px){.hero-art{display:none}.hero-panel{min-height:0}}
 
-/* Layout pure admin dashboard tanpa sidebar */
-.app-shell.admin-shell .main-column{margin-left:0}
+/* Layout pure admin dashboard tanpa sidebar & pure auth page */
+.app-shell.admin-shell .main-column,
+.app-shell.auth-shell .main-column {
+  margin-left: 0;
+}
 .brand-inline{display:flex;align-items:center;gap:11px;text-decoration:none}
 .brand-inline b{font:800 16px Manrope,sans-serif;letter-spacing:-.4px;display:block;color:#152b4b;line-height:1.2}
 .brand-inline small{display:block;color:#8993a5;font-size:10px}

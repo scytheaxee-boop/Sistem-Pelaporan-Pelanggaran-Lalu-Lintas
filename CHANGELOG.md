@@ -1528,6 +1528,31 @@ Commit `feeede0` di-push ke branch `main`. Server FastAPI dapat dijalankan langs
 
 ---
 
+---
+
+# 24 NOVEMBER 2026 — TUESDAY
+
+## CHANGE-20261124-001 — PURE LOGIN/AUTHENTICATION PAGE LAYOUT
+
+**Date:** 24 November 2026  
+**Day:** Tuesday  
+**Timezone:** Asia/Makassar (WITA)  
+**Task Type:** UI/UX & Layout Refactoring  
+
+### 1. Requirements
+- Menghilangkan navigasi/sidebar sebelah kiri pada halaman `/auth` (login/registrasi).
+- Menjadikan halaman autentikasi sebagai *pure login page* dengan konten form yang terpusat dan tanpa elemen sidebar yang tidak perlu.
+- Menyesuaikan header topbar saat berada di halaman autentikasi untuk menampilkan branding langsung dan menyembunyikan tombol "Masuk" yang berulang.
+
+### 2. Files Modified
+- `src/App.jsx` (Modified)
+- `src/styles.css` (Modified)
+
+### 3. Result
+Sidebar tidak lagi muncul pada halaman login `/auth`. Layout bersih dan fokus sepenuhnya ke form login/register.
+
+---
+
 # IMPORTANT HISTORICAL ACCURACY NOTES
 
 1. Riwayat ini dibuat dari percakapan dan konteks proyek yang tersedia.

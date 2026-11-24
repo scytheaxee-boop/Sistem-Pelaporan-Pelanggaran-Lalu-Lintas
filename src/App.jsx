@@ -84,9 +84,12 @@ function App() {
   if (loading) return <div className="loading-screen"><div className="spinner" /><p>Menyiapkan LaporLintas...</p></div>;
 
   const isAdmin = profile?.role === 'admin';
+  const isAuthPage = location.pathname === '/auth';
+  const hideSidebar = isAdmin || isAuthPage;
+
   return (
-    <div className={`app-shell ${isAdmin ? 'admin-shell' : ''}`}>
-      {!isAdmin && (
+    <div className={`app-shell ${isAdmin ? 'admin-shell' : ''} ${isAuthPage ? 'auth-shell' : ''}`}>
+      {!hideSidebar && (
         <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}>
           <Link to="/" className="brand" onClick={() => setMobileNav(false)}>
             <span className="brand-mark"><TrafficCone size={23} /></span>
@@ -104,7 +107,7 @@ function App() {
           </div>
         </aside>
       )}
-      {!isAdmin && mobileNav && <button aria-label="Tutup menu" className="mobile-scrim" onClick={() => setMobileNav(false)} />}
+      {!hideSidebar && mobileNav && <button aria-label="Tutup menu" className="mobile-scrim" onClick={() => setMobileNav(false)} />}
       <div className="main-column">
         <header className="topbar">
           {isAdmin ? (
@@ -116,6 +119,15 @@ function App() {
               <span className="crumb-sep">/</span>
               <b>Dashboard Admin</b>
             </div>
+          ) : isAuthPage ? (
+            <div className="topbar-brand-wrap">
+              <Link to="/" className="brand-inline">
+                <span className="brand-mark sm"><TrafficCone size={19} /></span>
+                <span><b>LaporLintas</b><small>Pelaporan masyarakat</small></span>
+              </Link>
+              <span className="crumb-sep">/</span>
+              <b>Autentikasi</b>
+            </div>
           ) : (
             <>
               <button className="icon-button mobile-menu" aria-label="Buka menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={20}/></button>
@@ -125,7 +137,7 @@ function App() {
           <div className="topbar-actions">
             <span className="secure-chip"><ShieldCheck size={15}/> {isAdmin ? 'Pusat kendali' : 'Sistem pelaporan'}</span>
             {session ? <div className="user-menu"><div className="avatar">{(profile?.full_name || session.user.email || 'U').slice(0,1).toUpperCase()}</div><div className="user-info"><b>{profile?.full_name || 'Pengguna'}</b><small>{isAdmin ? 'Administrator' : 'Masyarakat'}</small></div><button className="icon-button" title="Keluar" onClick={signOut}><LogOut size={17}/></button></div>
-            : <Link to="/auth" className="button button-primary button-sm"><LogIn size={16}/> Masuk</Link>}
+            : !isAuthPage && <Link to="/auth" className="button button-primary button-sm"><LogIn size={16}/> Masuk</Link>}
           </div>
         </header>
         {profileError && <div className="notice notice-error"><AlertCircle size={18}/>{profileError}</div>}
