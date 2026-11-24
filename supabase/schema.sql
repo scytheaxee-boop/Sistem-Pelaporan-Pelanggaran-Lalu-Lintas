@@ -90,6 +90,15 @@ CREATE TABLE IF NOT EXISTS public.reports (
     admin_spam_verification TEXT
         CHECK (admin_spam_verification IS NULL OR admin_spam_verification IN ('verified_normal', 'verified_spam', 'dismissed')),
 
+    -- Moderasi AI Foto Bukti (YOLOv8n ONNX, opsional)
+    photo_ai_prediction TEXT
+        CHECK (photo_ai_prediction IS NULL OR photo_ai_prediction IN ('RELEVAN', 'TIDAK_RELEVAN')),
+    photo_ai_confidence DOUBLE PRECISION
+        CHECK (photo_ai_confidence IS NULL OR (photo_ai_confidence >= 0.0 AND photo_ai_confidence <= 1.0)),
+    photo_ai_objects JSONB,
+    photo_ai_summary TEXT,
+    photo_ai_checked_at TIMESTAMPTZ,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -495,7 +504,9 @@ GRANT UPDATE (
     category, description, location, latitude, longitude,
     incident_time, photo_path, status, updated_at,
     spam_prediction, spam_probability, normal_probability,
-    spam_model_version, spam_checked_at, admin_spam_verification
+    spam_model_version, spam_checked_at, admin_spam_verification,
+    photo_ai_prediction, photo_ai_confidence, photo_ai_objects,
+    photo_ai_summary, photo_ai_checked_at
 ) ON public.reports TO authenticated;
 GRANT SELECT ON public.profiles TO authenticated;
 GRANT SELECT ON public.report_status_history TO authenticated;

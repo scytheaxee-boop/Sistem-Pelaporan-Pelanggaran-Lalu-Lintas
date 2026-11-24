@@ -1528,6 +1528,51 @@ Commit `feeede0` di-push ke branch `main`. Server FastAPI dapat dijalankan langs
 
 ---
 
+
+# 24 NOVEMBER 2026 — TUESDAY
+
+## CHANGE-20261124-001 — IMPLEMENT LIGHTWEIGHT AI PHOTO TRAFFIC DETECTION & TEXT-PHOTO CROSS-CHECK (YOLOV8N ONNX)
+
+**Date:** 24 November 2026  
+**Day:** Tuesday  
+**Time:** 15:46:30 WITA  
+**Timezone:** Asia/Makassar (WITA)  
+**Task Type:** Machine Learning (Computer Vision), API Integration, & Database Schema  
+**Branch:** `feat/ai-photo-detection`  
+
+### 1. Original Developer Request & Requirements
+- Menambahkan kemampuan AI ringan untuk membaca foto bukti laporan tanpa library berat (menggunakan `onnxruntime` + `Pillow` + `NumPy` dengan model `yolov8n.onnx` ~12.8 MB, tanpa PyTorch/ultralytics).
+- Mendeteksi objek lalu lintas (`bicycle`, `car`, `motorcycle`, `bus`, `train`, `truck`, `traffic light`, `stop sign`, serta konteks `person`) untuk mengklasifikasikan relevansi foto (`RELEVAN` vs `TIDAK_RELEVAN`).
+- Menambahkan pencocokan ringan (*cross-check*) antara teks deskripsi & kategori laporan dengan objek hasil deteksi YOLOv8n (`COCOK`, `SEBAGIAN_COCOK`, `TIDAK_COCOK`).
+- Menyajikan endpoint `POST /api/ml/analyze-photo` (dengan validasi format gambar aktual via Pillow `JPEG`/`PNG`/`WEBP` dan batas 5 MB).
+- Menjalankan pemindaian teks + foto secara *silent* di latar belakang saat warga mengirim/mengedit laporan, dan menampilkan hasilnya pada tabel & modal `Periksa laporan` di Dashboard Admin (`/admin`).
+
+### 2. Files Created & Modified
+- `ml-service/models/yolov8n.onnx` (Created)
+- `ml-service/app/services/photo_detector.py` (Created)
+- `ml-service/app/routes/photo.py` (Created)
+- `ml-service/app/main.py` (Modified — registrasi `photo_router` & update root metadata)
+- `ml-service/requirements.txt` (Modified — tambah `onnxruntime>=1.19.0`, `pillow>=10.0.0`)
+- `src/App.jsx` (Modified — helper `analyzePhotoWithAI`, `buildPhotoAiPayload`, `stripOptionalAiFields`, scan foto background di `CreateReportPage` & `EditReportModal`, panel Analisis AI Foto Bukti & Kecocokan Teks ↔ Foto di `AdminPage`)
+- `src/styles.css` (Modified — styling `.ai-col-stack`, `.ai-photo-panel`, `.ai-photo-summary`, `.ai-object-chips`, `.ai-object-chip`)
+- `supabase/migrations/20261124_ai_photo_detection.sql` (Created)
+- `supabase/schema.sql` (Modified — tambah kolom `photo_ai_*` dan `GRANT UPDATE`)
+- `CHANGELOG.md` (Modified — penambahan entri `CHANGE-20261124-001`)
+
+### 3. Database Changes
+- Penambahan kolom opsional pada `public.reports`: `photo_ai_prediction`, `photo_ai_confidence`, `photo_ai_objects`, `photo_ai_summary`, `photo_ai_checked_at`, serta pembaruan `GRANT UPDATE` untuk role `authenticated` (`supabase/migrations/20261124_ai_photo_detection.sql` & `supabase/schema.sql`).
+- Aplikasi tetap memiliki *graceful fallback* (`stripOptionalAiFields`) jika migrasi belum dijalankan di proyek Supabase aktif.
+
+### 4. Testing & Verification
+- `npx vite build`: Lolos (`✓ built in 2.70s`, 1.621 modul).
+- Endpoint `GET http://localhost:8000/health` & `GET http://localhost:5173/`: HTTP `200 OK`.
+- Uji `POST /api/ml/analyze-photo` dengan PNG (`application/octet-stream`) + teks `"Motor menerobos lampu merah..."`: HTTP `200 OK`, mengembalikan `prediction: "TIDAK_RELEVAN"`, `match_status: "TIDAK_COCOK"`, `missing_objects: ["sepeda motor", "lampu lalu lintas"]`.
+- Uji file teks yang disamarkan sebagai `.jpg`: ditolak dengan HTTP `400` (`"File bukan gambar yang valid (JPG, PNG, atau WebP)."`).
+
+### 5. Status & Pending Work
+- **Status:** `VERIFIED` (lokal) / Siap Review PR ke `main` pada branch `feat/ai-photo-detection`.
+- **Pending Work:** Menjalankan migrasi `supabase/migrations/20261124_ai_photo_detection.sql` di Supabase SQL Editor apabila ingin menyimpan hasil skor foto permanen ke database.
+
 ---
 
 # 24 NOVEMBER 2026 — TUESDAY
@@ -1550,6 +1595,7 @@ Commit `feeede0` di-push ke branch `main`. Server FastAPI dapat dijalankan langs
 
 ### 3. Result
 Sidebar tidak lagi muncul pada halaman login `/auth`. Layout bersih dan fokus sepenuhnya ke form login/register.
+
 
 ---
 
