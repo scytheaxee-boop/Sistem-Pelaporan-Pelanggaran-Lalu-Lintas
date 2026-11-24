@@ -415,6 +415,7 @@ function buildPhotoAiPayload(photoAi) {
 function stripOptionalAiFields(payload, err) {
   if (!err) return false;
   const msg = err.message || '';
+  let changed = false;
   if (msg.includes('spam_') || msg.includes('photo_ai_') || err.code === 'PGRST204') {
     delete payload.spam_prediction;
     delete payload.spam_probability;
@@ -426,9 +427,13 @@ function stripOptionalAiFields(payload, err) {
     delete payload.photo_ai_objects;
     delete payload.photo_ai_summary;
     delete payload.photo_ai_checked_at;
-    return true;
+    changed = true;
   }
-  return false;
+  if (msg.includes('reporter_name')) {
+    delete payload.reporter_name;
+    changed = true;
+  }
+  return changed;
 }
 
 function CreateReportPage({session}) {
@@ -488,8 +493,12 @@ function CreateReportPage({session}) {
       const autoAi = spamRes.status === 'fulfilled' ? spamRes.value : null;
       const autoPhotoAi = photoRes.status === 'fulfilled' ? photoRes.value : null;
 
+      const userFullName = session?.user?.user_metadata?.full_name || 
+        (session?.user?.email ? session.user.email.split('@')[0] : null);
+
       const payload={
         user_id:session.user.id,
+        reporter_name: userFullName || null,
         category,
         description:cleanDescription,
         location:cleanLocation,
@@ -771,10 +780,21 @@ function EditReportModal({report, session, onClose, onSuccess}) {
         aiPatch.photo_ai_checked_at = null;
       }
 
+      const userFullName = session?.user?.user_metadata?.full_name || 
+        (session?.user?.email ? session.user.email.split('@')[0] : null);
+
       if (!rpcErr) {
-        if (Object.keys(aiPatch).length > 0) {
+        if (Object.keys(aiPatch).length > 0 || userFullName) {
           try {
-            await supabase.from('reports').update(aiPatch).eq('id', report.id);
+            const updatePayload = { ...aiPatch };
+            if (userFullName) updatePayload.reporter_name = userFullName;
+            const { error: patchErr } = await supabase.from('reports').update(updatePayload).eq('id', report.id);
+            if (patchErr && patchErr.message?.includes('reporter_name')) {
+              delete updatePayload.reporter_name;
+              if (Object.keys(updatePayload).length > 0) {
+                await supabase.from('reports').update(updatePayload).eq('id', report.id);
+              }
+            }
           } catch (_) {}
         }
       } else {
@@ -789,6 +809,7 @@ function EditReportModal({report, session, onClose, onSuccess}) {
           photo_path: finalPhotoPath,
           status: 'pending',
           updated_at: new Date().toISOString(),
+          ...(userFullName ? { reporter_name: userFullName } : {}),
           ...aiPatch
         };
         let { error: directErr } = await supabase.from('reports').update(payload).eq('id', report.id);
@@ -940,9 +961,9 @@ function AdminPage({profile}) {
     setError('');
     try {
       // 1. Ambil laporan beserta relasi profiles dan kolom AI (spam + foto)
-      const selectWithAllAi = 'id,user_id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,spam_prediction,spam_probability,normal_probability,spam_model_version,spam_checked_at,admin_spam_verification,photo_ai_prediction,photo_ai_confidence,photo_ai_objects,photo_ai_summary,photo_ai_checked_at,profiles!user_id(full_name)';
-      const selectFieldsWithSpam = 'id,user_id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,spam_prediction,spam_probability,normal_probability,spam_model_version,spam_checked_at,admin_spam_verification,profiles!user_id(full_name)';
-      const selectFallback = 'id,user_id,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,profiles!user_id(full_name)';
+      const selectWithAllAi = 'id,user_id,reporter_name,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,spam_prediction,spam_probability,normal_probability,spam_model_version,spam_checked_at,admin_spam_verification,photo_ai_prediction,photo_ai_confidence,photo_ai_objects,photo_ai_summary,photo_ai_checked_at,profiles!user_id(full_name)';
+      const selectFieldsWithSpam = 'id,user_id,reporter_name,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,spam_prediction,spam_probability,normal_probability,spam_model_version,spam_checked_at,admin_spam_verification,profiles!user_id(full_name)';
+      const selectFallback = 'id,user_id,reporter_name,category,description,location,status,created_at,incident_time,photo_path,admin_note,latitude,longitude,profiles!user_id(full_name)';
 
       let repData = null;
       let {data:d0, error:err0} = await supabase
@@ -981,22 +1002,37 @@ function AdminPage({profile}) {
         }
       }
 
-      // 2. Query tabel profiles langsung untuk menjamin nama/username pelapor selalu terbaca oleh admin
-      const {data:profs} = await supabase.from('profiles').select('id, full_name');
+      // 2. Query data nama/username pelapor (coba RPC get_admin_reporters lalu fallback ke profiles)
       const profMap = {};
-      if (profs) {
-        for (const p of profs) {
-          if (p.full_name) profMap[p.id] = p.full_name;
+      try {
+        const { data: adminReporters, error: rpcErr } = await supabase.rpc('get_admin_reporters');
+        if (!rpcErr && adminReporters) {
+          for (const ar of adminReporters) {
+            if (ar.full_name) profMap[ar.user_id] = ar.full_name;
+          }
         }
-      }
+      } catch (_) {}
 
-      // 3. Pasangkan nama pelapor secara akurat
+      // Fallback/pelengkap: query profiles langsung
+      try {
+        const { data: profs } = await supabase.from('profiles').select('id, full_name');
+        if (profs) {
+          for (const p of profs) {
+            if (p.full_name && !profMap[p.id]) profMap[p.id] = p.full_name;
+          }
+        }
+      } catch (_) {}
+
+      // 3. Pasangkan nama pelapor secara akurat (prioritas: RPC/profiles > reporter_name cache > nama user)
       const finalReports = (repData || []).map(r => {
         const joined = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
-        const reporterName = profMap[r.user_id] || joined?.full_name || 'Pengguna';
+        const resolvedName = profMap[r.user_id] || 
+          joined?.full_name || 
+          r.reporter_name || 
+          (r.user_id ? `Warga (${r.user_id.slice(0, 8)})` : 'Pengguna');
         return {
           ...r,
-          reporterName
+          reporterName: resolvedName
         };
       });
 

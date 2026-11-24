@@ -1599,6 +1599,44 @@ Sidebar tidak lagi muncul pada halaman login `/auth`. Layout bersih dan fokus se
 
 ---
 
+## CHANGE-20261125-001 — ADMIN DASHBOARD REPORTER USERNAME RESOLUTION & RPC
+
+**Date:** 25 November 2026  
+**Day:** Wednesday  
+**Timezone:** Asia/Makassar (WITA)  
+**Task Type:** Bug Fix & Architecture Enhancement  
+
+### 1. Requirements
+- Pengguna melaporkan bahwa pada tabel Dashboard Admin, kolom "Pelapor (Username)" menampilkan fallback teks generik "Pengguna" untuk semua baris laporan warga.
+- Memperbaiki sistem agar menampilkan nama lengkap / username pelapor yang sebenarnya (misalnya "Ryveline", "Komdan Tende", atau nama pengguna terdaftar) alih-alih hanya fallback "Pengguna".
+- Mengatasi keterbatasan RLS PostgreSQL di Supabase yang mencegah user admin biasa membaca data profil user lain ketika fungsi `is_admin()` belum terpasang di database remote.
+
+### 2. Root Cause Analysis
+1. Pada tabel `profiles` di Supabase, RLS aktif dengan kebijakan `profiles_select_own_or_admin` yang bergantung pada fungsi `public.is_admin()`.
+2. Di remote database, fungsi `public.is_admin()` belum dibuat di SQL editor, sehingga pemanggilan `supabase.from('profiles').select('id, full_name')` hanya mengembalikan profil admin itu sendiri (`auth.uid()`).
+3. Akibatnya, `profMap[r.user_id]` selalu bernilai `undefined` untuk semua pelapor lain, sehingga komponen UI jatuh ke fallback `'Pengguna'`.
+
+### 3. Solution & Implementation
+1. **Database Migration (`supabase/migrations/20261125_reporter_username_fix.sql`):**
+   - Membuat fungsi `public.is_admin()` dengan `SECURITY DEFINER` sehingga aman dievaluasi dalam konteks RLS.
+   - Menambahkan RPC `public.get_admin_reporters()` dengan `SECURITY DEFINER` yang mengembalikan tabel `{ user_id, full_name, email }` dari gabungan `auth.users` dan `public.profiles`.
+   - Menambahkan kolom `reporter_name` di `public.reports` untuk menyimpan nama pelapor secara otomatis saat laporan dibuat atau diperbaiki.
+   - Melakukan sinkronisasi data profil awal dari `auth.users` ke `public.profiles` bagi pengguna lama yang belum memiliki baris profil.
+2. **Frontend Enhancement (`src/App.jsx`):**
+   - Menambahkan penyimpanan `reporter_name` otomatis pada payload pembuatan laporan (`CreateReportPage`) dan pembaruan laporan (`EditReportModal`).
+   - Pada `AdminPage`, memperbarui alur `refresh()` untuk memanggil `supabase.rpc('get_admin_reporters')` terlebih dahulu, lalu digabungkan dengan `supabase.from('profiles').select()`, `r.reporter_name`, dan relasi `profiles(full_name)`.
+   - Jika profil tidak ditemukan, menampilkan identitas akun yang informatif (`Warga (<shortId>)`) alih-alih teks kosong/generik.
+
+### 4. Files Modified
+- `supabase/migrations/20261125_reporter_username_fix.sql` (Created)
+- `src/App.jsx` (Modified)
+- `CHANGELOG.md` (Modified)
+
+### 5. Result
+Nama dan username pelapor kini terbaca dan ditampilkan dengan jelas dan akurat di tabel Dashboard Admin serta pada modal detail verifikasi laporan.
+
+---
+
 # IMPORTANT HISTORICAL ACCURACY NOTES
 
 1. Riwayat ini dibuat dari percakapan dan konteks proyek yang tersedia.
