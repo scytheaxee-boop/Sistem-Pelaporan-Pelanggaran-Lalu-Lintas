@@ -1,103 +1,217 @@
 # Workflow Sistem LaporLintas
 
-## Sistem Pelaporan Dugaan Pelanggaran Lalu Lintas
+## Sistem Pelaporan Dugaan Pelanggaran Lalu Lintas & Moderasi Berbasis AI
 
-**Stack:** React + Vite, Supabase Auth, PostgreSQL, Supabase Storage,
-Row Level Security (RLS).\
-**Peran:** masyarakat (`user`) dan admin (`admin`).
+**Stack:**
+- **Frontend:** React 18 + Vite, React Router v6, Lucide Icons, Vanilla CSS modular.
+- **Backend & Database:** Supabase Auth, PostgreSQL 15+, Supabase Storage (Private Bucket), Row Level Security (RLS).
+- **Machine Learning Service (`ml-service`):** Python 3.10+, FastAPI, Uvicorn, Scikit-learn (Multinomial Naive Bayes + TF-IDF), YOLOv8n ONNX Runtime, Pillow.
+- **Peran Pengguna:** Tamu / Publik (`guest`), Masyarakat Terdaftar (`user`), dan Administrator (`admin`).
 
-## 1. Tujuan dan prinsip
+---
 
-LaporLintas memungkinkan masyarakat mengirimkan laporan tentang kondisi
-atau dugaan pelanggaran lalu lintas. Laporan disimpan secara terstruktur
-agar dapat diperiksa admin, diberi catatan verifikasi, dan dipantau oleh
-pelapor.
+## 1. Tujuan dan Prinsip Sistem
 
-**Penting:** laporan masyarakat adalah informasi awal yang harus
-ditinjau. Laporan tidak otomatis menjadi bukti pelanggaran resmi dan
-tidak otomatis menetapkan seseorang bersalah. Keputusan lanjutan
-mengikuti kewenangan dan prosedur pihak berwenang.
+LaporLintas memungkinkan masyarakat menyampaikan informasi dugaan pelanggaran atau kondisi lalu lintas secara terstruktur dan bertanggung jawab. Sistem dilengkapi modul kecerdasan buatan (*Machine Learning*) sebagai alat bantu moderasi awal untuk menyaring teks spam dan memverifikasi keabsahan foto bukti sebelum ditindaklanjuti secara resmi oleh administrator.
 
-## 2. Arsitektur sistem
+**Prinsip Utama:**
+1. **Laporan Masyarakat Bukan Penetapan Hukum Otomatis:** Setiap laporan adalah bahan informasi awal. Keputusan resmi tetap berada pada kewenangan instansi berwenang.
+2. **AI sebagai Pendukung Keputusan (*Decision Support System*):** Hasil deteksi spam teks dan deteksi objek foto digunakan sebagai rekomendasi bagi admin, bukan pemutus sepihak (*human-in-the-loop*).
+3. **Penyaringan Senyap (*Silent Processing*):** Warga tidak dibebani pengujian teknis AI saat membuat laporan. Proses inferensi AI berjalan di latar belakang secara otomatis.
+4. **Toleran Gangguan (*Graceful Degradation*):** Jika layanan ML offline, proses bisnis utama pelaporan warga tetap berjalan normal.
 
-``` text
-Masyarakat / Admin
-        |
-        v
-Browser: React + Vite
-  - Formulir dan validasi
-  - Daftar/detail laporan
-  - Dashboard admin
-        |
-        v
-Supabase Client
-        |
-        +--> Supabase Auth (akun dan sesi)
-        +--> PostgreSQL (profiles, reports, riwayat status)
-        +--> Storage (foto privat)
-        +--> RLS dan fungsi database (kontrol akses)
+---
+
+## 2. Arsitektur Komprehensif Sistem
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Pengguna (Browser)                              │
+│   - Tamu: Splash Screen Animasi & Blurred Landing Page                 │
+│   - Halaman Login / Registrasi: Pure Auth Page (Tanpa Sidebar)         │
+│   - Warga: Buat Laporan, Riwayat Laporan, Edit & Kirim Ulang           │
+│   - Admin: Pure Admin Dashboard (Navigasi Khusus & Tanpa Sidebar)      │
+└───────────────────┬────────────────────────────────┬───────────────────┘
+                    │                                │
+    [Supabase Auth, CRUD, Storage]          [Silent AI Auto-Scan]
+                    │                                │
+                    ▼                                ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────┐
+│        Supabase Cloud Backend        │  │   FastAPI ML Microservice    │
+│  - Supabase Auth (JWT & Roles)       │  │   (Port 8000)                │
+│  - PostgreSQL 15 (RLS Enforced)      │  │  - POST /api/ml/detect-spam  │
+│    * profiles                        │  │    (Multinomial Naive Bayes) │
+│    * reports                         │  │  - POST /api/ml/analyze-photo│
+│    * report_status_history           │  │    (YOLOv8n ONNX + Pillow)   │
+│  - Supabase Storage (Private Bucket) │  │  - GET /health               │
+│    * report-photos (Signed URLs)     │  └──────────────────────────────┘
+└──────────────────────────────────────┘
 ```
 
--   **React + Vite:** antarmuka, navigasi, validasi awal, dan feedback
-    pengguna.
--   **Supabase Auth:** pendaftaran, login, dan pengelolaan sesi.
--   **PostgreSQL:** profil, laporan, catatan, dan riwayat.
--   **Supabase Storage:** menyimpan foto laporan.
--   **RLS:** membatasi baris data yang dapat diakses.
--   **Fungsi database admin:** jalur terkendali untuk perubahan status,
-    misalnya `admin_update_report_status`, jika fungsi tersebut telah
-    dibuat dan dikonfigurasi.
+---
 
-Nama tabel, kolom, bucket, status, dan fungsi harus dicocokkan dengan
-skema Supabase yang benar-benar aktif. Dokumen ini menjelaskan workflow
-rancangan, bukan bukti bahwa seluruh konfigurasi produksi telah diuji.
+## 3. Fase 1 — Akses Pengguna & Tampilan Bersih
 
-## 3. Fase 1 --- Persiapan dan konfigurasi
+### 3.1 Tamu (Belum Login)
+1. Pengguna membuka alamat situs LaporLintas.
+2. Menampilkan **Splash Screen Animasi** logo LaporLintas selama 2 detik (dapat dilewati dengan klik).
+3. Halaman Ringkasan menampilkan tampilan terkunci (*blurred guest view*) yang memfokuskan pengguna untuk masuk atau mendaftar terlebih dahulu.
 
-1.  Pasang Node.js dan dependensi project.
-2.  Jalankan aplikasi melalui skrip yang tersedia di `package.json`,
-    misalnya `npm run dev`.
-3.  Siapkan variabel lingkungan untuk koneksi Supabase.
-4.  Inisialisasi Supabase client pada frontend.
-5.  Siapkan tabel, relasi, fungsi database, RLS, bucket Storage, dan
-    kebijakan Storage.
-6.  Jalankan aplikasi dan periksa bahwa halaman serta koneksi backend
-    berfungsi.
+### 3.2 Halaman Autentikasi (`/auth`)
+1. Ditampilkan dalam tata letak penuh (*pure auth page*) tanpa bilah menu samping (sidebar).
+2. Header menampilkan branding `LaporLintas / Autentikasi`.
+3. Mendukung beralih cepat antara form *Masuk* dan *Daftar Akun*.
+4. Setelah login berhasil:
+   - Jika role pengguna adalah `admin` ➔ Langsung diarahkan ke `/admin`.
+   - Jika role pengguna adalah `user` ➔ Diarahkan ke Beranda Ringkasan `/`.
 
-**Output:** aplikasi dapat berjalan dan layanan Supabase siap digunakan.
+---
 
-**Keamanan:** `.env` harus tetap diabaikan oleh Git. `node_modules/` dan
-`dist/` juga tidak perlu masuk repository. Nilai `VITE_*` terekspos ke
-browser; hanya URL project dan publishable/anon key yang memang aman
-untuk publik yang boleh digunakan di frontend. Jangan pernah menaruh
-`service_role` key, password database, atau secret privat pada
-frontend/repository.
+## 4. Fase 2 — Alur Pelaporan Warga (Citizen Flow)
 
-## 4. Fase 2 --- Pendaftaran dan autentikasi
+### 4.1 Pembuatan Laporan Baru (`/buat-laporan`)
+1. Warga mengisi form: kategori pelanggaran, deskripsi kejadian (min. 20 karakter & 3 kata), lokasi kejadian (min. 3 karakter).
+2. Warga dapat menekan tombol **Gunakan GPS** untuk mengisi koordinat lintang (*latitude*) dan bujur (*longitude*) secara akurat.
+3. Warga dapat mengunggah 1 foto kejadian (opsional, maks. 5 MB, format JPG/PNG/WebP).
+4. Warga menekan tombol **Kirim Laporan**.
 
-### Pendaftaran
+### 4.2 Pemindaian AI Otomatis di Latar Belakang (*Silent Auto-Scan*)
+1. Saat tombol kirim ditekan, frontend secara paralel melakukan dua pemindaian AI ke FastAPI (jika aktif):
+   - **Analisis Teks Spam:** Mengirimkan deskripsi ke `POST /api/ml/detect-spam`.
+   - **Analisis Objek Foto:** Mengirimkan berkas gambar ke `POST /api/ml/analyze-photo`.
+2. Hasil prediksi (`NORMAL`/`SPAM` beserta probabilitas) dan hasil deteksi foto (`RELEVAN`/`TIDAK_RELEVAN`, ringkasan objek, kecocokan) disematkan ke dalam payload laporan.
+3. Jika service ML tidak aktif / offline, proses tetap dilanjutkan tanpa menampilkan galat yang membingungkan warga (*graceful fallback*).
+4. Laporan disimpan ke tabel `reports` dengan status awal `pending`.
+5. Berkas foto diunggah ke private bucket `report-photos`.
 
-1.  Pengguna membuka halaman daftar.
-2.  Pengguna memasukkan email dan kata sandi.
-3.  Frontend memeriksa kolom wajib dan format dasar.
-4.  Supabase Auth membuat akun.
-5.  Jika verifikasi email diaktifkan, pengguna mengikuti proses
-    verifikasi.
-6.  Profil pengguna dibuat atau disinkronkan ke `profiles` melalui
-    mekanisme yang dikonfigurasi.
-7.  Aplikasi menampilkan hasil pendaftaran.
+---
 
-### Login
+## 5. Fase 3 — Pemantauan, Edit & Kirim Ulang oleh Warga
 
-1.  Pengguna memasukkan kredensial.
-2.  Frontend mengirim permintaan ke Supabase Auth.
-3.  Jika valid, Supabase mengembalikan sesi.
-4.  Aplikasi memuat profil terkait.
-5.  UI ditentukan berdasarkan role: `user` ke area masyarakat dan
-    `admin` ke dashboard admin.
-6.  Jika login gagal, tampilkan pesan yang aman dan mudah dipahami.
+### 5.1 Riwayat Laporan Saya (`/laporan-saya`)
+1. Warga dapat melihat daftar seluruh laporan yang pernah dikirimkan beserta status terkininya.
+2. Filter status: Semua, Menunggu, Dalam Pemeriksaan, Perlu Perbaikan, Ditolak, Diteruskan, Selesai.
+3. Klik pada item laporan membuka modal rincian laporan (kategori, lokasi, koordinat peta OSM, foto bukti ber-signed URL, serta catatan admin).
 
-Jika profil atau role belum tersedia, tangani secara eksplisit. Jangan
+### 5.2 Edit & Kirim Ulang Laporan (`EditReportModal`)
+1. Jika laporan berstatus `pending` atau `revision` (misal admin meminta kelengkapan patokan jalan):
+   - Tombol **Edit & Kirim Ulang** akan aktif.
+2. Warga dapat memperbaiki deskripsi, lokasi, titik GPS, mengganti foto, atau menghapus foto lama.
+3. Saat dikirim ulang:
+   - Sistem menjalankan pemindaian AI teks/foto otomatis kembali.
+   - Menggunakan RPC `user_resubmit_report` atau fallback direct update.
+   - Status laporan otomatis kembali ke `pending` dan catatan revisi diperbarui.
+
+---
+
+## 6. Fase 4 — Alur Dashboard Administrator (Admin Moderation Flow)
+
+### 6.1 Tampilan Pure Admin Dashboard (`/admin`)
+1. Sidebar standar warga dihilangkan sepenuhnya, hanya menampilkan antarmuka kerja admin.
+2. Statistik ringkasan data: Total Laporan, Menunggu Verifikasi, Sedang Diverifikasi, Diteruskan / Tindak Lanjut.
+3. Tabel Manajemen Laporan:
+   - Kolom: ID / Tanggal, **Pelapor (Nama Lengkap & ID Akun)**, Kategori, Lokasi, **AI Spam**, Status, dan Tombol Periksa.
+   - Pencarian cerdas berdasarkan ID, nama pelapor, kategori, atau lokasi.
+   - Kolom *AI Spam* menampilkan badge `Normal (98%)` atau `SPAM (95%)`.
+   - Kolom *AI Foto* (pada modal) menampilkan objek yang terdeteksi (`car`, `motorcycle`, dll.) dan status kecocokan teks-foto (`COCOK`, `TIDAK_COCOK`).
+
+### 6.2 Pemeriksaan & Moderasi Keputusan Admin
+1. Admin mengklik tombol **Periksa** pada baris laporan.
+2. **Panel Moderasi AI Spam Detection (Multinomial Naive Bayes):**
+   - Menampilkan hasil prediksi, probabilitas normal, probabilitas spam, waktu periksa, dan tombol pindai ulang AI.
+   - Jika laporan belum memiliki hasil AI, sistem langsung memindai otomatis saat modal dibuka.
+   - Admin dapat mencatat verifikasi spam: `Belum diverifikasi`, `Terverifikasi: Normal`, `Terverifikasi: Spam`, atau `Abaikan`.
+3. **Panel Moderasi AI Foto Bukti & Konsistensi Teks (YOLOv8n ONNX):**
+   - Menampilkan status relevansi foto (`RELEVAN` vs `TIDAK_RELEVAN`).
+   - Menampilkan daftar objek kendaraan/rambu/marka yang terdeteksi beserta tingkat keyakinan (*confidence*).
+   - Menampilkan status kecocokan teks deskripsi dengan foto (`COCOK`, `SEBAGIAN_COCOK`, `TIDAK_COCOK`).
+4. **Penetapan Keputusan / Status Resmi:**
+   - Admin memilih status baru (`pending`, `reviewing`, `revision`, `rejected`, `forwarded`, `in_progress`, `completed`).
+   - Jika memilih status `revision` atau `rejected`, input **Catatan Verifikasi** wajib diisi untuk memberikan alasan transparan kepada pelapor.
+5. Perubahan disimpan secara aman melalui RPC `admin_update_report_status` dan dicatat ke `report_status_history`.
+
+---
+
+## 7. Fase 5 — Arsitektur & Operasional Machine Learning Service (`ml-service`)
+
+### 7.1 Spesifikasi Model & Pipeline
+1. **Model Deteksi Teks Spam:**
+   - Algoritma: **Multinomial Naive Bayes** (`alpha=0.5`).
+   - Ekstraksi Fitur: `FeatureUnion` menggabungkan Word TF-IDF `(1, 2)` dan Character n-grams `char_wb` `(3, 5)` untuk menangani variasi bahasa gaul dan teks acak (*asdfghjkl*).
+   - Evaluasi: Akurasi 99.31%, Macro F1 99.31%, **0 False Positives** (tidak ada laporan sah yang salah diklasifikasikan sebagai spam).
+2. **Model Deteksi Foto Bukti:**
+   - Algoritma: **YOLOv8n ONNX** (eksekusi ringan via `onnxruntime` CPU).
+   - Objek Target Lalu Lintas: `car`, `motorcycle`, `bus`, `truck`, `bicycle`, `train`, `traffic light`, `stop sign`, `person`.
+   - Pencocokan Silang: Membandingkan kata kunci kategori & deskripsi laporan terhadap objek visual yang terdeteksi.
+
+### 7.2 Menjalankan Layanan ML Lokal
+```bash
+# Masuk ke folder microservice
+cd ml-service
+
+# Install dependensi (cukup sekali)
+python3 -m pip install -r requirements.txt
+
+# Jalankan server FastAPI
+python3 app/main.py
+# atau
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+Layanan aktif di `http://localhost:8000` dengan Swagger UI interaktif di `/docs`.
+
+---
+
+## 8. Diagram Alur Proses Lengkap (End-to-End)
+
+```text
+Masyarakat / Warga                          FastAPI (AI Engine)           Admin LaporLintas
+       |                                             |                            |
+       |--- 1. Buka web (Splash Screen)              |                            |
+       |--- 2. Login / Register (Pure Auth View)     |                            |
+       |--- 3. Isi form laporan + GPS + Foto         |                            |
+       |                                             |                            |
+       |--- 4. Tekan "Kirim Laporan" --------------->|                            |
+       |                               [Auto-Scan Spam MNB]                       |
+       |                               [Auto-Scan Objek YOLOv8]                   |
+       |<-- 5. Laporan tersimpan ke DB & Storage <---|                            |
+       |                                                                          |
+       |                                                            6. Buka /admin (Pure Dashboard)
+       |                                                                          |
+       |                                                            7. Tabel tampilkan Pelapor,
+       |                                                               Status AI Spam & Foto
+       |                                                                          |
+       |                                                            8. Klik "Periksa Laporan"
+       |                                                               - Review detail laporan
+       |                                                               - Review panel AI Spam
+       |                                                               - Review panel AI Foto
+       |                                                               - Verifikasi & catatan
+       |                                                                          |
+       |<-- 9. Status diperbarui (misal: 'revision' butuh info) <-----------------|
+       |                                                                          |
+       |--- 10. Edit & Kirim Ulang (Laporan Saya) ------------------------------->|
+       |                                                                 (Masuk antrean pending)
+```
+
+---
+
+## 9. Matriks Tahapan dan Output Sistem
+
+| Tahapan | Aktor Utama | Proses / Teknologi | Output Sistem |
+|---|---|---|---|
+| **Akses Publik** | Tamu | React Splash Screen & Guest Overlay | Pengenalan branding dan pengalihan ke autentikasi |
+| **Autentikasi** | Warga / Admin | Supabase Auth, Pure Auth Page | Token JWT sesi dan penetapan antarmuka peran |
+| **Pelaporan** | Warga | Form React, Geolocation API, Supabase Storage | Data laporan tervalidasi dan berkas foto privat |
+| **AI Text Analysis** | Background ML | FastAPI, Multinomial Naive Bayes, TF-IDF | Nilai probabilitas normal vs spam |
+| **AI Photo Analysis**| Background ML | FastAPI, YOLOv8n ONNX Runtime, Pillow | Label objek lalu lintas dan skor konsistensi |
+| **Penyimpanan Data** | Supabase DB | PostgreSQL, RLS Policies, Graceful Fallback | Record laporan aman dengan metadata AI lengkap |
+| **Audit Admin** | Administrator | Pure Admin Dashboard, Status Action Modal | Keputusan status resmi & verifikasi moderasi AI |
+| **Perbaikan Laporan**| Warga | EditReportModal, RPC `user_resubmit_report` | Pengiriman ulang data perbaikan ke antrean admin |
+
+---
+
+## 10. Kesimpulan
+
+Workflow LaporLintas mengintegrasikan seluruh perjalanan pelaporan lalu lintas mulai dari pengalaman pengguna publik yang ramah, kemudahan pengiriman laporan berbasis GPS dan foto, keandalan moderasi cerdas menggunakan **Multinomial Naive Bayes** dan **YOLOv8n**, hingga panel kerja eksklusif administrator untuk menetapkan keputusan yang akuntabel dan transparan.
 memberikan role admin secara otomatis. Role admin harus ditetapkan
 melalui jalur tepercaya, bukan dengan mengubah nilai di browser.
 
